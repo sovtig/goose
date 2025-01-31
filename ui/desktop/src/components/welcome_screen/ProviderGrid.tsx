@@ -14,7 +14,7 @@ import { getDefaultModel } from '../settings/models/hardcoded_stuff';
 import { initializeSystem } from '../../utils/providerUtils';
 import { getApiUrl, getSecretKey } from '../../config';
 import { toast } from 'react-toastify';
-import { getActiveProviders } from '../settings/api_keys/utils';
+import { getActiveProviders, isSecretKey } from '../settings/api_keys/utils';
 import { useNavigate } from 'react-router-dom';
 import { BaseProviderGrid, getProviderDescription } from '../settings/providers/BaseProviderGrid';
 
@@ -81,15 +81,19 @@ export function ProviderGrid({ onSubmit }: ProviderGridProps) {
       return;
     }
 
+    const isSecret = isSecretKey(keyName);
     try {
       if (selectedId && providers.find((p) => p.id === selectedId)?.isConfigured) {
-        const deleteResponse = await fetch(getApiUrl('/secrets/delete'), {
+        const deleteResponse = await fetch(getApiUrl('/configs/delete'), {
           method: 'DELETE',
           headers: {
             'Content-Type': 'application/json',
             'X-Secret-Key': getSecretKey(),
           },
-          body: JSON.stringify({ key: keyName }),
+          body: JSON.stringify({ 
+            key: keyName, 
+            isSecret,
+          }),
         });
 
         if (!deleteResponse.ok) {
@@ -99,7 +103,7 @@ export function ProviderGrid({ onSubmit }: ProviderGridProps) {
         }
       }
 
-      const storeResponse = await fetch(getApiUrl('/secrets/store'), {
+      const storeResponse = await fetch(getApiUrl('/configs/store'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -108,6 +112,7 @@ export function ProviderGrid({ onSubmit }: ProviderGridProps) {
         body: JSON.stringify({
           key: keyName,
           value: apiKey.trim(),
+          isSecret,
         }),
       });
 
@@ -118,10 +123,11 @@ export function ProviderGrid({ onSubmit }: ProviderGridProps) {
       }
 
       const isUpdate = selectedId && providers.find((p) => p.id === selectedId)?.isConfigured;
+      const toastInfo = isSecret ? 'API key' : 'host';
       toast.success(
         isUpdate
-          ? `Successfully updated API key for ${provider}`
-          : `Successfully added API key for ${provider}`
+          ? `Successfully updated ${toastInfo} for ${provider}`
+          : `Successfully added ${toastInfo} for ${provider}`
       );
 
       const updatedKeys = await getActiveProviders();

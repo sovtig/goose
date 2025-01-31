@@ -1,6 +1,7 @@
 use crate::message::{Message, MessageContent};
 use crate::model::ModelConfig;
 use crate::providers::base::Usage;
+use crate::providers::errors::ProviderError;
 use crate::providers::utils::{
     convert_image, is_valid_function_name, sanitize_function_name, ImageFormat,
 };
@@ -221,10 +222,10 @@ pub fn response_to_message(response: Value) -> anyhow::Result<Message> {
     })
 }
 
-pub fn get_usage(data: &Value) -> anyhow::Result<Usage> {
+pub fn get_usage(data: &Value) -> Result<Usage, ProviderError> {
     let usage = data
         .get("usage")
-        .ok_or_else(|| anyhow!("No usage data in response"))?;
+        .ok_or_else(|| ProviderError::UsageError("No usage data in response".to_string()))?;
 
     let input_tokens = usage
         .get("prompt_tokens")
@@ -255,8 +256,16 @@ pub fn create_request(
     tools: &[Tool],
     image_format: &ImageFormat,
 ) -> anyhow::Result<Value, Error> {
+    if model_config.model_name.starts_with("o1-mini") {
+        return Err(anyhow!(
+            "o1-mini model is not currently supported since Goose uses tool calling."
+        ));
+    }
+
+    let is_o1 = model_config.model_name.starts_with("o1");
+
     let system_message = json!({
-        "role": "system",
+        "role": if is_o1 { "developer" } else { "system" },
         "content": system
     });
 
@@ -281,17 +290,27 @@ pub fn create_request(
             .unwrap()
             .insert("tools".to_string(), json!(tools_spec));
     }
-    if let Some(temp) = model_config.temperature {
-        payload
-            .as_object_mut()
-            .unwrap()
-            .insert("temperature".to_string(), json!(temp));
+    // o1 models currently don't support temperature
+    if !is_o1 {
+        if let Some(temp) = model_config.temperature {
+            payload
+                .as_object_mut()
+                .unwrap()
+                .insert("temperature".to_string(), json!(temp));
+        }
     }
+
+    // o1 models use max_completion_tokens instead of max_tokens
     if let Some(tokens) = model_config.max_tokens {
+        let key = if is_o1 {
+            "max_completion_tokens"
+        } else {
+            "max_tokens"
+        };
         payload
             .as_object_mut()
             .unwrap()
-            .insert("max_tokens".to_string(), json!(tokens));
+            .insert(key.to_string(), json!(tokens));
     }
     Ok(payload)
 }

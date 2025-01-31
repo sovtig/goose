@@ -5,7 +5,7 @@ import { supported_providers, provider_aliases, required_keys } from '../models/
 import { ProviderSetupModal } from '../ProviderSetupModal';
 import { getApiUrl, getSecretKey } from '../../../config';
 import { toast } from 'react-toastify';
-import { getActiveProviders } from '../api_keys/utils';
+import { getActiveProviders, isSecretKey } from '../api_keys/utils';
 import { useModel } from '../models/ModelContext';
 import { Button } from '../../ui/button';
 
@@ -86,17 +86,22 @@ export function ConfigureProvidersGrid() {
       return;
     }
 
+    const isSecret = isSecretKey(keyName);
+
     try {
       // Delete existing key if provider is already configured
       const isUpdate = providers.find((p) => p.id === selectedForSetup)?.isConfigured;
       if (isUpdate) {
-        const deleteResponse = await fetch(getApiUrl('/secrets/delete'), {
+        const deleteResponse = await fetch(getApiUrl('/configs/delete'), {
           method: 'DELETE',
           headers: {
             'Content-Type': 'application/json',
             'X-Secret-Key': getSecretKey(),
           },
-          body: JSON.stringify({ key: keyName }),
+          body: JSON.stringify({ 
+            key: keyName, 
+            isSecret,
+          }),
         });
 
         if (!deleteResponse.ok) {
@@ -107,7 +112,7 @@ export function ConfigureProvidersGrid() {
       }
 
       // Store new key
-      const storeResponse = await fetch(getApiUrl('/secrets/store'), {
+      const storeResponse = await fetch(getApiUrl('/configs/store'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -116,6 +121,7 @@ export function ConfigureProvidersGrid() {
         body: JSON.stringify({
           key: keyName,
           value: apiKey.trim(),
+          isSecret,
         }),
       });
 
@@ -125,10 +131,11 @@ export function ConfigureProvidersGrid() {
         throw new Error('Failed to store new key');
       }
 
+      const toastInfo = isSecret ? 'API key' : 'host';
       toast.success(
         isUpdate
-          ? `Successfully updated API key for ${provider}`
-          : `Successfully added API key for ${provider}`
+          ? `Successfully updated ${toastInfo} for ${provider}`
+          : `Successfully added ${toastInfo} for ${provider}`
       );
 
       const updatedKeys = await getActiveProviders();
@@ -159,23 +166,28 @@ export function ConfigureProvidersGrid() {
       return;
     }
 
+    const isSecret = isSecretKey(keyName);
+    const toastInfo = isSecret ? 'API key' : 'host';
     try {
       // Check if the selected provider is currently active
       if (currentModel?.provider === providerToDelete.name) {
         toast.error(
-          `Cannot delete the API key for ${providerToDelete.name} because it's the provider of the current model (${currentModel.name}). Please switch to a different model first.`
+          `Cannot delete the ${toastInfo} for ${providerToDelete.name} because it's the provider of the current model (${currentModel.name}). Please switch to a different model first.`
         );
         setIsConfirmationOpen(false);
         return;
       }
 
-      const deleteResponse = await fetch(getApiUrl('/secrets/delete'), {
+      const deleteResponse = await fetch(getApiUrl('/configs/delete'), {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
           'X-Secret-Key': getSecretKey(),
         },
-        body: JSON.stringify({ key: keyName }),
+        body: JSON.stringify({
+          key: keyName,
+          isSecret,
+        }),
       });
 
       if (!deleteResponse.ok) {
@@ -185,13 +197,13 @@ export function ConfigureProvidersGrid() {
       }
 
       console.log('Key deleted successfully.');
-      toast.success(`Successfully deleted API key for ${providerToDelete.name}`);
+      toast.success(`Successfully deleted ${toastInfo} for ${providerToDelete.name}`);
 
       const updatedKeys = await getActiveProviders();
       setActiveKeys(updatedKeys);
     } catch (error) {
       console.error('Error deleting key:', error);
-      toast.error(`Unable to delete API key for ${providerToDelete.name}`);
+      toast.error(`Unable to delete ${toastInfo} for ${providerToDelete.name}`);
     }
     setIsConfirmationOpen(false);
   };
@@ -230,7 +242,7 @@ export function ConfigureProvidersGrid() {
 
       {isConfirmationOpen && providerToDelete && (
         <ConfirmationModal
-          message={`Are you sure you want to delete the API key for ${providerToDelete.name}? This action cannot be undone.`}
+          message={`Are you sure you want to delete the API key or host for ${providerToDelete.name}? This action cannot be undone.`}
           onConfirm={confirmDelete}
           onCancel={() => setIsConfirmationOpen(false)}
         />
