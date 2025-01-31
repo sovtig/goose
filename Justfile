@@ -53,6 +53,11 @@ make-ui:
     @just release
     cd ui/desktop && npm run bundle:default
 
+# make GUI with latest binary
+make-ui-intel:
+    @just release-intel
+    cd ui/desktop && npm run bundle:intel    
+
 # Setup langfuse server
 langfuse-server:
     #!/usr/bin/env bash
