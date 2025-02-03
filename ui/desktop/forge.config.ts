@@ -39,11 +39,8 @@ module.exports = {
       config: {},
     },
     {
-      name: '@electron-forge/maker-zip',
-      config: {
-        platforms: ['darwin'],
-        arch: process.env.ELECTRON_ARCH === 'x64' ? ['x64'] : ['arm64']
-      }
+      name: '@electron-forge/maker-zip',      
+      platforms: ['darwin'],
     },
     {
       name: '@electron-forge/maker-deb',
