@@ -3,7 +3,7 @@ use dotenv::dotenv;
 use goose::message::{Message, MessageContent};
 use goose::providers::base::Provider;
 use goose::providers::errors::ProviderError;
-use goose::providers::{anthropic, databricks, google, groq, ollama, openai, openrouter};
+use goose::providers::{anthropic, azure, databricks, google, groq, ollama, openai, openrouter};
 use mcp_core::content::Content;
 use mcp_core::tool::Tool;
 use std::collections::HashMap;
@@ -230,6 +230,15 @@ impl ProviderTester {
         dbg!(&result);
         println!("===================");
 
+        // Ollama and OpenRouter truncate by default even when the context window is exceeded
+        if self.name.to_lowercase() == "ollama" || self.name.to_lowercase() == "openrouter" {
+            assert!(
+                result.is_ok(),
+                "Expected to succeed because of default truncation"
+            );
+            return Ok(());
+        }
+
         assert!(
             result.is_err(),
             "Expected error when context window is exceeded"
@@ -346,6 +355,21 @@ async fn test_openai_provider() -> Result<()> {
         &["OPENAI_API_KEY"],
         None,
         openai::OpenAiProvider::default,
+    )
+    .await
+}
+
+#[tokio::test]
+async fn test_azure_provider() -> Result<()> {
+    test_provider(
+        "Azure",
+        &[
+            "AZURE_OPENAI_API_KEY",
+            "AZURE_OPENAI_ENDPOINT",
+            "AZURE_OPENAI_DEPLOYMENT_NAME",
+        ],
+        None,
+        azure::AzureProvider::default,
     )
     .await
 }

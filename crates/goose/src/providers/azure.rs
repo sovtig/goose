@@ -12,63 +12,63 @@ use crate::message::Message;
 use crate::model::ModelConfig;
 use mcp_core::tool::Tool;
 
-pub const OPEN_AI_DEFAULT_MODEL: &str = "gpt-4o";
-pub const OPEN_AI_KNOWN_MODELS: &[&str] = &[
-    "gpt-4o",
-    "gpt-4o-mini",
-    "gpt-4-turbo",
-    "gpt-3.5-turbo",
-    "o1",
-];
-
-pub const OPEN_AI_DOC_URL: &str = "https://platform.openai.com/docs/models";
+pub const AZURE_DEFAULT_MODEL: &str = "gpt-4o";
+pub const AZURE_DOC_URL: &str =
+    "https://learn.microsoft.com/en-us/azure/ai-services/openai/concepts/models";
+pub const AZURE_API_VERSION: &str = "2024-10-21";
+pub const AZURE_OPENAI_KNOWN_MODELS: &[&str] = &["gpt-4o", "gpt-4o-mini", "gpt-4"];
 
 #[derive(Debug, serde::Serialize)]
-pub struct OpenAiProvider {
+pub struct AzureProvider {
     #[serde(skip)]
     client: Client,
-    host: String,
+    endpoint: String,
     api_key: String,
+    deployment_name: String,
     model: ModelConfig,
 }
 
-impl Default for OpenAiProvider {
+impl Default for AzureProvider {
     fn default() -> Self {
-        let model = ModelConfig::new(OpenAiProvider::metadata().default_model);
-        OpenAiProvider::from_env(model).expect("Failed to initialize OpenAI provider")
+        let model = ModelConfig::new(AzureProvider::metadata().default_model);
+        AzureProvider::from_env(model).expect("Failed to initialize Azure OpenAI provider")
     }
 }
 
-impl OpenAiProvider {
+impl AzureProvider {
     pub fn from_env(model: ModelConfig) -> Result<Self> {
         let config = crate::config::Config::global();
-        let api_key: String = config.get_secret("OPENAI_API_KEY")?;
-        let host: String = config
-            .get("OPENAI_HOST")
-            .unwrap_or_else(|_| "https://api.openai.com".to_string());
+        let api_key: String = config.get_secret("AZURE_OPENAI_API_KEY")?;
+        let endpoint: String = config.get("AZURE_OPENAI_ENDPOINT")?;
+        let deployment_name: String = config.get("AZURE_OPENAI_DEPLOYMENT_NAME")?;
+
         let client = Client::builder()
             .timeout(Duration::from_secs(600))
             .build()?;
 
         Ok(Self {
             client,
-            host,
+            endpoint,
             api_key,
+            deployment_name,
             model,
         })
     }
 
     async fn post(&self, payload: Value) -> Result<Value, ProviderError> {
-        let base_url = url::Url::parse(&self.host)
+        let mut base_url = url::Url::parse(&self.endpoint)
             .map_err(|e| ProviderError::RequestFailed(format!("Invalid base URL: {e}")))?;
-        let url = base_url.join("v1/chat/completions").map_err(|e| {
-            ProviderError::RequestFailed(format!("Failed to construct endpoint URL: {e}"))
-        })?;
 
-        let response = self
+        base_url.set_path(&format!(
+            "openai/deployments/{}/chat/completions",
+            self.deployment_name
+        ));
+        base_url.set_query(Some(&format!("api-version={}", AZURE_API_VERSION)));
+
+        let response: reqwest::Response = self
             .client
-            .post(url)
-            .header("Authorization", format!("Bearer {}", self.api_key))
+            .post(base_url)
+            .header("api-key", &self.api_key)
             .json(&payload)
             .send()
             .await?;
@@ -78,21 +78,27 @@ impl OpenAiProvider {
 }
 
 #[async_trait]
-impl Provider for OpenAiProvider {
+impl Provider for AzureProvider {
     fn metadata() -> ProviderMetadata {
         ProviderMetadata::new(
-            "openai",
-            "OpenAI",
-            "GPT-4 and other OpenAI models",
-            OPEN_AI_DEFAULT_MODEL,
-            OPEN_AI_KNOWN_MODELS
+            "azure_openai",
+            "Azure OpenAI",
+            "Models through Azure OpenAI Service",
+            "gpt-4o",
+            AZURE_OPENAI_KNOWN_MODELS
                 .iter()
-                .map(|&s| s.to_string())
+                .map(|s| s.to_string())
                 .collect(),
-            OPEN_AI_DOC_URL,
+            AZURE_DOC_URL,
             vec![
-                ConfigKey::new("OPENAI_API_KEY", true, true, None),
-                ConfigKey::new("OPENAI_HOST", false, false, Some("https://api.openai.com")),
+                ConfigKey::new("AZURE_OPENAI_API_KEY", true, true, None),
+                ConfigKey::new("AZURE_OPENAI_ENDPOINT", true, false, None),
+                ConfigKey::new(
+                    "AZURE_OPENAI_DEPLOYMENT_NAME",
+                    true,
+                    false,
+                    Some("Name of your Azure OpenAI deployment"),
+                ),
             ],
         )
     }
@@ -112,11 +118,8 @@ impl Provider for OpenAiProvider {
         tools: &[Tool],
     ) -> Result<(Message, ProviderUsage), ProviderError> {
         let payload = create_request(&self.model, system, messages, tools, &ImageFormat::OpenAi)?;
-
-        // Make request
         let response = self.post(payload.clone()).await?;
 
-        // Parse response
         let message = response_to_message(response.clone())?;
         let usage = match get_usage(&response) {
             Ok(usage) => usage,

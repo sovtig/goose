@@ -70,7 +70,7 @@ To configure your chosen provider or see available options, run `goose configure
    │  ○ OpenRouter 
    └  
    ```
-   4. Enter you API key (and any other configuration details) when prompted
+   4. Enter your API key (and any other configuration details) when prompted
 
    ```
    ┌   goose-configure 
@@ -163,6 +163,12 @@ Ollama provides local LLMs, which requires a bit more set up before you can use 
 
 1. [Download Ollama](https://ollama.com/download). 
 2. Run any [model supporting tool-calling](https://ollama.com/search?c=tools):
+
+
+:::info Ollama Endpoint Construction
+For Ollama, we set default host to `localhost` and port to `11434` if you don't provide it. When constructing the URL, we preprend `"http://"` if the scheme is not http or https.
+If you're running Ollama on port 80 or 443, you have to set `OLLMA_HOST=http://host:port`
+:::
 
 :::warning Limited Support for models without tool calling
 Goose extensively uses tool calling, so models without it (e.g. `DeepSeek-r1`) can only do chat completion. If using models without tool calling, all Goose [extensions must be disabled](/docs/getting-started/using-extensions#enablingdisabling-extensions). As an alternative, you can use a [custom DeepSeek-r1 model](/docs/getting-started/providers#deepseek-r1) we've made specifically for Goose.
