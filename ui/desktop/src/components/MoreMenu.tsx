@@ -252,6 +252,15 @@ export default function MoreMenu({ setView }: { setView: (view: View) => void })
             </button>
             <button
               onClick={() => {
+                setOpen(false);
+                navigate('/settings');
+              }}
+              className="w-full text-left p-2 text-sm hover:bg-bgSubtle transition-colors text-indigo-800"
+            >
+              Delete Provider Keys from Keychain
+            </button>
+            <button
+              onClick={() => {
                 localStorage.removeItem('GOOSE_PROVIDER');
                 setOpen(false);
                 window.electron.createChatWindow();
