@@ -31,10 +31,13 @@ use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use xcap::{Monitor, Window};
 
+use ignore::gitignore::{Gitignore, GitignoreBuilder};
+
 pub struct DeveloperRouter {
     tools: Vec<Tool>,
     file_history: Arc<Mutex<HashMap<PathBuf, Vec<String>>>>,
     instructions: String,
+    ignore_patterns: Arc<Gitignore>,
 }
 
 impl Default for DeveloperRouter {
@@ -157,6 +160,10 @@ impl DeveloperRouter {
 
         // Get base instructions and working directory
         let cwd = std::env::current_dir().expect("should have a current working dir");
+
+        // Initialize ignore patterns
+        let ignore_patterns = Self::load_ignore_patterns(&cwd);
+
         let base_instructions = formatdoc! {r#"
             The developer extension gives you the capabilities to edit code files and run shell commands,
             and can be used to solve a wide range of problems.
@@ -196,7 +203,87 @@ impl DeveloperRouter {
             ],
             file_history: Arc::new(Mutex::new(HashMap::new())),
             instructions,
+            ignore_patterns: Arc::new(ignore_patterns),
         }
+    }
+
+    pub fn load_ignore_patterns(cwd: &Path) -> Gitignore {
+        let mut builder = GitignoreBuilder::new(cwd);
+        let mut has_ignore_file = false;
+        
+        // Try to load global ignore file from user's home directory
+        if let Some(home) = dirs::home_dir() {
+            let global_ignore = home.join(".gooseignore");
+            if global_ignore.exists() {
+                let _ = builder.add(global_ignore);
+                has_ignore_file = true;
+            }
+        }
+        
+        // Try to load local ignore file
+        let local_ignore = cwd.join(".gooseignore");
+        if local_ignore.exists() {
+            let _ = builder.add(local_ignore);
+            has_ignore_file = true;
+        }
+        println!("yyoyo");
+
+        // Only use default patterns if no .gooseignore files were found
+        // If the file is empty, we will not ignore any file
+        if !has_ignore_file {
+            // Add some sensible defaults
+            println!("kakakak");
+            let _ = builder.add_line(None, "**/.env");
+            let _ = builder.add_line(None, "**/.env.*");
+            let _ = builder.add_line(None, "**/secrets.*");
+        }
+    
+        builder.build().expect("Failed to build ignore patterns")
+    }
+
+    // Helper method to check if a path should be ignored
+    fn is_ignored(&self, path: &Path) -> bool {
+        self.ignore_patterns.matched(path, false).is_ignore()
+    }
+
+    // Helper method to check if a shell command might access ignored files
+    fn check_command_for_ignored_files(&self, command: &str) -> Option<String> {
+        // Common file reading/writing commands to check
+        let file_commands = ["cat", "less", "more", "head", "tail", "grep", "awk", "sed"];
+        
+        // Skip checking for certain safe commands
+        let safe_commands = ["ls", "pwd", "echo", "which", "whoami", "date", "ps"];
+        
+        let cmd_parts: Vec<&str> = command.split_whitespace().collect();
+        if cmd_parts.is_empty() {
+            return None;
+        }
+
+        // If it's a safe command, don't check further
+        if safe_commands.contains(&cmd_parts[0]) {
+            return None;
+        }
+
+        // If it's a known file-accessing command, check the arguments
+        if file_commands.contains(&cmd_parts[0]) {
+            for arg in &cmd_parts[1..] {
+                // Skip command flags
+                if arg.starts_with('-') {
+                    continue;
+                }
+                
+                // Convert argument to path and check if it's ignored
+                let path = Path::new(arg);
+                if self.is_ignored(path) {
+                    return Some(format!(
+                        "Warning: The command attempts to access '{}' which is restricted by .gooseignore",
+                        arg
+                    ));
+                }
+            }
+        }
+
+        None
     }
 
     // Helper method to resolve a path relative to cwd
@@ -226,6 +313,11 @@ impl DeveloperRouter {
                 .ok_or(ToolError::InvalidParameters(
                     "The command string is required".to_string(),
                 ))?;
+
+        // Check if command might access ignored files and return early if it does
+        if let Some(error_msg) = self.check_command_for_ignored_files(command) {
+            return Err(ToolError::ExecutionError(error_msg));
+        }
 
         // TODO consider command suggestions and safety rails
 
@@ -286,6 +378,14 @@ impl DeveloperRouter {
             .ok_or_else(|| ToolError::InvalidParameters("Missing 'path' parameter".into()))?;
 
         let path = self.resolve_path(path_str)?;
+
+        // Check if file is ignored before proceeding with any text editor operation
+        if self.is_ignored(&path) {
+            return Err(ToolError::ExecutionError(format!(
+                "Access to '{}' is restricted by .gooseignore",
+                path.display()
+            )));
+        }
 
         match command {
             "view" => self.text_editor_view(&path).await,
@@ -689,6 +789,7 @@ impl Clone for DeveloperRouter {
             tools: self.tools.clone(),
             file_history: Arc::clone(&self.file_history),
             instructions: self.instructions.clone(),
+            ignore_patterns: Arc::clone(&self.ignore_patterns),
         }
     }
 }
@@ -1016,4 +1117,239 @@ mod tests {
 
         temp_dir.close().unwrap();
     }
+
+    // // Test GooseIgnore pattern matching
+    // #[test]
+    // fn test_goose_ignore_basic_patterns() {
+    //     let temp_dir = TempDir::new().unwrap();
+    //     let root = temp_dir.path();
+        
+    //     // Create a .gooseignore file
+    //     std::fs::write(
+    //         root.join(".gooseignore"),
+    //         "*.env\n# Comment line\nsecrets/*\n**/credentials.json\n",
+    //     ).unwrap();
+
+    //     let ignore = DeveloperRouter::load_ignore_patterns(root);
+
+    //     // Test various paths
+    //     assert!(ignore.matched(root.join("test.env"), false).is_ignore());
+    //     assert!(ignore.matched(root.join("secrets/api_key.txt"), false).is_ignore());
+    //     assert!(ignore.matched(root.join("some/path/credentials.json"), false).is_ignore());
+    //     assert!(!ignore.matched(root.join("normal_file.txt"), false).is_ignore());
+    //     assert!(!ignore.matched(root.join("src/main.rs"), false).is_ignore());
+    // }
+
+    // #[test]
+    // fn test_goose_ignore_default_patterns() {
+    //     println!("test started");
+    //     let temp_dir = TempDir::new().unwrap();
+    //     let root = temp_dir.path();
+        
+    //     // Don't create a .gooseignore file - should use defaults
+    //     let ignore = DeveloperRouter::load_ignore_patterns(root);
+
+    //     // // Test default patterns
+    //     assert!(ignore.matched(root.join(".env"), false).is_ignore());
+    //     assert!(ignore.matched(root.join(".env.local"), false).is_ignore());
+    //     assert!(ignore.matched(root.join("secrets.yaml"), false).is_ignore());
+    //     assert!(!ignore.matched(root.join("normal_file.txt"), false).is_ignore());
+    // }
+
+    // #[test]
+    // fn test_goose_ignore_global_and_local() {
+    //     let temp_dir = TempDir::new().unwrap();
+    //     let root = temp_dir.path();
+        
+    //     // Create a mock home directory with global .gooseignore
+    //     let mock_home = TempDir::new().unwrap();
+    //     std::fs::write(
+    //         mock_home.path().join(".gooseignore"),
+    //         "global_secret.*\n",
+    //     ).unwrap();
+
+    //     // Create local .gooseignore
+    //     std::fs::write(
+    //         root.join(".gooseignore"),
+    //         "local_secret.*\n",
+    //     ).unwrap();
+
+    //     // Temporarily override home directory for test
+    //     temp_env::with_var("HOME", Some(mock_home.path().to_str().unwrap()), || {
+    //         let ignore = DeveloperRouter::load_ignore_patterns(temp_dir.path());
+            
+    //         // Both global and local patterns should work
+    //         assert!(ignore.matched(temp_dir.path().join("global_secret.txt"), false).is_ignore());
+    //         assert!(ignore.matched(temp_dir.path().join("local_secret.txt"), false).is_ignore());
+    //         assert!(!ignore.matched(temp_dir.path().join("normal.txt"), false).is_ignore());
+    //     });
+    // }
+
+    // // Test text editor integration
+    // #[tokio::test]
+    // #[serial]
+    // async fn test_text_editor_respects_ignore_patterns() {
+    //     // let temp_dir = TempDir::new().unwrap();
+    //     // std::env::set_current_dir(&temp_dir).unwrap();
+
+    //     // if let Some(home) = dirs::home_dir() {
+    //     //     std::fs::write(
+    //     //         home.join(".gooseignore"),
+    //     //         "global_secret.*\n",
+    //     //     ).unwrap();
+    //     // }
+
+    //     // // Create a .gooseignore file
+    //     // std::fs::write(
+    //     //     temp_dir.path().join(".gooseignore"),
+    //     //     "secret.txt\n*.env\n",
+    //     // ).unwrap();
+
+    //     // let router = get_router().await;
+
+    //     // // Create test files
+    //     // std::fs::write(temp_dir.path().join("secret.txt"), "secret data").unwrap();
+    //     // std::fs::write(temp_dir.path().join("normal.txt"), "normal data").unwrap();
+    //     // std::fs::write(temp_dir.path().join("global_secret.txt"), "global secret").unwrap();
+
+    //     // // Try to view an ignored file (local pattern)
+    //     // let secret_file = temp_dir.path().join("secret.txt");
+    //     // let result = router
+    //     //     .call_tool(
+    //     //         "text_editor",
+    //     //         json!({
+    //     //             "command": "view",
+    //     //             "path": secret_file.to_str().unwrap(),
+    //     //         }),
+    //     //     )
+    //     //     .await;
+
+    //     // assert!(result.is_err());
+    //     // assert!(result.unwrap_err().to_string().contains("restricted by .gooseignore"));
+
+    //     // // Try to view an ignored file (global pattern)
+    //     // let global_secret_file = temp_dir.path().join("global_secret.txt");
+    //     // let result = router
+    //     //     .call_tool(
+    //     //         "text_editor",
+    //     //         json!({
+    //     //             "command": "view",
+    //     //             "path": global_secret_file.to_str().unwrap(),
+    //     //         }),
+    //     //     )
+    //     //     .await;
+
+    //     // assert!(result.is_err());
+    //     // assert!(result.unwrap_err().to_string().contains("restricted by .gooseignore"));
+
+    //     // // Try to view a normal file
+    //     // let normal_file = temp_dir.path().join("normal.txt");
+    //     // let result = router
+    //     //     .call_tool(
+    //     //         "text_editor",
+    //     //         json!({
+    //     //             "command": "view",
+    //     //             "path": normal_file.to_str().unwrap(),
+    //     //         }),
+    //     //     )
+    //     //     .await;
+
+    //     // assert!(result.is_ok());
+    //     // let content = result.unwrap();
+    //     // assert!(content.iter().any(|c| c.as_text().unwrap().contains("normal data")));
+
+    //     // // Try to write to an ignored file
+    //     // let result = router
+    //     //     .call_tool(
+    //     //         "text_editor",
+    //     //         json!({
+    //     //             "command": "write",
+    //     //             "path": secret_file.to_str().unwrap(),
+    //     //             "file_text": "new secret data"
+    //     //         }),
+    //     //     )
+    //     //     .await;
+
+    //     // assert!(result.is_err());
+    //     // assert!(result.unwrap_err().to_string().contains("restricted by .gooseignore"));
+    // }
+
+    // // Test bash integration
+    // #[tokio::test]
+    // #[serial]
+    // async fn test_bash_blocks_ignored_files() {
+    //     let temp_dir = TempDir::new().unwrap();
+    //     std::env::set_current_dir(&temp_dir).unwrap();
+
+    //     // Create a .gooseignore file and test files
+    //     std::fs::write(
+    //         temp_dir.path().join(".gooseignore"),
+    //         "secret.txt\n*.env\n",
+    //     ).unwrap();
+    //     std::fs::write(temp_dir.path().join("secret.txt"), "secret data").unwrap();
+    //     std::fs::write(temp_dir.path().join("normal.txt"), "normal data").unwrap();
+
+    //     let router = get_router().await;
+
+    //     // Try to cat an ignored file
+    //     let result = router
+    //         .call_tool(
+    //             "shell",
+    //             json!({
+    //                 "command": "cat secret.txt"
+    //             }),
+    //         )
+    //         .await;
+
+    //     // Should fail with an error
+    //     assert!(result.is_err());
+    //     assert!(result.unwrap_err().to_string().contains("restricted by .gooseignore"));
+
+    //     // Try a safe command
+    //     let result = router
+    //         .call_tool(
+    //             "shell",
+    //             json!({
+    //                 "command": "ls"
+    //             }),
+    //         )
+    //         .await;
+
+    //     // Should succeed
+    //     assert!(result.is_ok());
+
+    //     // Try to cat a normal file
+    //     let result = router
+    //         .call_tool(
+    //             "shell",
+    //             json!({
+    //                 "command": "cat normal.txt"
+    //             }),
+    //         )
+    //         .await;
+
+    //     // Should succeed
+    //     assert!(result.is_ok());
+    // }
+
+    // #[test]
+    // fn test_bash_command_detection() {
+    //     let temp_dir = TempDir::new().unwrap();
+    //     std::env::set_current_dir(&temp_dir).unwrap();
+        
+    //     // Create .gooseignore and test files
+    //     std::fs::write(
+    //         temp_dir.path().join(".gooseignore"),
+    //         "secret.txt\n",
+    //     ).unwrap();
+
+    //     let router = DeveloperRouter::new();
+
+    //     // Test various commands
+    //     assert!(router.check_command_for_ignored_files("cat secret.txt").is_some());
+    //     assert!(router.check_command_for_ignored_files("grep pattern secret.txt").is_some());
+    //     assert!(router.check_command_for_ignored_files("ls").is_none());
+    //     assert!(router.check_command_for_ignored_files("echo hello").is_none());
+    //     assert!(router.check_command_for_ignored_files("cat normal.txt").is_none());
+    // }
 }
