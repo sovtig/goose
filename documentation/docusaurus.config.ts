@@ -57,7 +57,10 @@ const config: Config = {
           onUntruncatedBlogPosts: "warn",
         },
         theme: {
-          customCss: "./src/css/custom.css",
+          customCss: [
+            "./src/css/custom.css",
+            "./src/css/extensions.css",
+          ],
         },
       } satisfies Preset.Options,
     ],
@@ -94,7 +97,11 @@ const config: Config = {
           {
             from: '/docs',
             to: '/docs/category/getting-started'
-          }         
+          },
+          {
+            from: '/v1/extensions',
+            to: '/extensions'
+          }
         ],
       },
     ],
@@ -123,7 +130,7 @@ const config: Config = {
         },
         { to: "/blog", label: "Blog", position: "left" },
         {
-          to: "https://block.github.io/goose/v1/extensions/",
+          to: "/extensions",
           label: "Extensions",
           position: "left",
         },
@@ -150,7 +157,7 @@ const config: Config = {
             },
             {
               label: "Extensions",
-              to: "https://block.github.io/goose/v1/extensions/",
+              to: "/extensions",
             },
           ],
         },

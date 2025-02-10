@@ -1,0 +1,54 @@
+/* Custom styles for the extensions pages */
+
+/* Animation for the card hover effect */
+@keyframes rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Ensure text remains readable in dark mode */
+.home-page-server-name {
+  color: var(--ifm-color-primary);
+}
+
+html[data-theme='dark'] .home-page-server-name {
+  color: var(--ifm-color-primary-lighter);
+}
+
+/* Custom colors that match Docusaurus theme */
+.text-textProminent {
+  color: var(--ifm-color-primary);
+}
+
+.text-textStandard {
+  color: var(--ifm-color-content);
+}
+
+.text-textSubtle {
+  color: var(--ifm-color-content-secondary);
+}
+
+.bg-borderSubtle {
+  background-color: var(--ifm-color-emphasis-200);
+}
+
+/* Dark mode adjustments */
+html[data-theme='dark'] .text-textProminent {
+  color: var(--ifm-color-primary-lighter);
+}
+
+html[data-theme='dark'] .text-textStandard {
+  color: var(--ifm-color-content);
+}
+
+html[data-theme='dark'] .text-textSubtle {
+  color: var(--ifm-color-content-secondary);
+}
+
+html[data-theme='dark'] .bg-borderSubtle {
+  background-color: var(--ifm-color-emphasis-100);
+}
