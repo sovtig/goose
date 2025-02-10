@@ -1,6 +1,6 @@
 import type { MCPServer } from "../types/server";
 
-const SERVERS_URL = "https://raw.githubusercontent.com/goose-ai/goose-servers/main/servers.json";
+const SERVERS_URL = "/goose/servers.json";
 
 export async function fetchMCPServers(): Promise<MCPServer[]> {
   try {
@@ -9,6 +9,7 @@ export async function fetchMCPServers(): Promise<MCPServer[]> {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     const data = await response.json();
+    console.log('Fetched MCP servers data:', data);
     return data;
   } catch (error) {
     console.error("Error fetching MCP servers:", error);

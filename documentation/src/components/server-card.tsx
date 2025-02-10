@@ -3,7 +3,7 @@ import { Badge } from "@site/src/components/ui/badge";
 import { Button } from "@site/src/components/ui/button";
 import { Card, CardContent, CardHeader } from "@site/src/components/ui/card";
 import type { MCPServer } from "@site/src/types/server";
-import { Link } from "@docusaurus/router";
+import Link from "@docusaurus/Link";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { getGooseInstallLink } from "@site/src/utils/install-links";

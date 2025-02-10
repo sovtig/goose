@@ -26,6 +26,7 @@ export default function HomePage() {
           ? await searchMCPServers(trimmedQuery)
           : await fetchMCPServers();
 
+        console.log('Loaded servers:', results);
         setServers(results);
       } catch (err) {
         const errorMessage =
