@@ -163,6 +163,7 @@ impl DeveloperRouter {
 
         // Initialize ignore patterns
         let ignore_patterns = Self::load_ignore_patterns(&cwd);
+        println!("ignore_patterns has been initialized");
 
         let base_instructions = formatdoc! {r#"
             The developer extension gives you the capabilities to edit code files and run shell commands,
