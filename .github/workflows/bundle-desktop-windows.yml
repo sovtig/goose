@@ -25,10 +25,6 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTC_WRAPPER: sccache
-  SCCACHE_GHA_ENABLED: true
-  # Enable LTO for release builds
-  RUSTFLAGS: "-C lto=thin"
   # Cache electron downloads
   ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
   ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
@@ -43,22 +39,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # 2) Install and setup sccache
-      - name: Install sccache
-        shell: bash
-        run: |
-          SCCACHE_VERSION="v0.5.4"
-          curl -L "https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-x86_64-pc-windows-msvc.tar.gz" | tar xz
-          echo "${PWD}/sccache-${SCCACHE_VERSION}-x86_64-pc-windows-msvc" >> $GITHUB_PATH
-
-      # 3) Set up Rust with specific target and components
+      # 2) Set up Rust with specific target and components
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-gnu
           components: rustfmt, clippy
 
-      # 4) Cache Rust dependencies and build artifacts
+      # 3) Cache Rust dependencies and build artifacts
       - name: Cache Rust
         uses: actions/cache@v3
         with:
@@ -72,23 +60,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      # 5) Cache sccache artifacts
-      - name: Cache sccache
-        uses: actions/cache@v3
-        with:
-          path: ~/.cache/sccache
-          key: ${{ runner.os }}-sccache-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-sccache-
-
-      # 6) Set up Node.js
+      # 4) Set up Node.js
       - name: Set up Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v2
         with:
-          node-version: 16
+          node-version: 'lts/*'
 
-      # 7) Cache node_modules
-      - name: Cache node_modules
+      # 5) Cache node_modules and electron
+      - name: Cache node_modules and electron
         uses: actions/cache@v3
         with:
           path: |
@@ -100,14 +79,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-build-desktop-windows-
 
-      # 8) Install top-level dependencies if a package.json is in root
+      # 6) Install top-level dependencies if a package.json is in root
       - name: Install top-level deps
         run: |
           if (Test-Path package.json) {
             npm install
           }
 
-      # 9) Cache and install MinGW
+      # 7) Cache and install MinGW
       - name: Cache MinGW
         uses: actions/cache@v3
         with:
@@ -128,12 +107,12 @@ jobs:
             Write-Host $_.FullName
           }
 
-      # 10) Cargo build for Windows with parallel jobs
+      # 8) Cargo build for Windows with parallel jobs
       - name: Cargo build for Windows
         run: |
           cargo build --release --target x86_64-pc-windows-gnu -j 4
 
-      # 11) Check that the compiled goosed.exe exists and copy exe/dll to ui/desktop/src/bin
+      # 9) Check that the compiled goosed.exe exists and copy exe/dll to ui/desktop/src/bin
       - name: Prepare Windows binary and DLLs
         run: |
           if (!(Test-Path .\target\x86_64-pc-windows-gnu\release\goosed.exe)) {
@@ -166,14 +145,14 @@ jobs:
             Copy-Item $_ ui\desktop\src\bin\
           }
 
-      # 12) Install & build UI desktop with parallel processing
+      # 10) Install & build UI desktop with parallel processing
       - name: Build desktop UI with npm
         run: |
           cd ui\desktop
           npm install --prefer-offline --no-audit
           npm run bundle:windows
 
-      # 13) Copy exe/dll to final out/Goose-win32-x64/resources/bin
+      # 11) Copy exe/dll to final out/Goose-win32-x64/resources/bin
       - name: Copy exe/dll to out folder
         run: |
           cd ui\desktop
@@ -185,7 +164,7 @@ jobs:
             Copy-Item $_ .\out\Goose-win32-x64\resources\bin\
           }
 
-      # 14) Code signing (if enabled)
+      # 12) Code signing (if enabled)
       - name: Sign Windows executable
         if: inputs.signing && inputs.signing == true
         env:
@@ -204,7 +183,7 @@ jobs:
           # Clean up the certificate
           Remove-Item -Path $certPath
 
-      # 15) Upload the final Windows build
+      # 13) Upload the final Windows build
       - name: Upload Windows build artifacts
         uses: actions/upload-artifact@v4
         with:
