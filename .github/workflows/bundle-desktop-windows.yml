@@ -1,10 +1,6 @@
 name: "Bundle Desktop (Windows)"
 
 on:
-#  push:
-#    branches: [ "main" ]
-#  pull_request:
-#    branches: [ "main" ]
   workflow_call:
     inputs:
       signing:
@@ -39,14 +35,23 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # 2) Set up Rust with specific target and components
+      # 2) Get optimal number of CPU cores for build
+      - name: Get optimal CPU cores
+        id: cpu-cores
+        run: |
+          $cores = (Get-CimInstance Win32_ComputerSystem).NumberOfLogicalProcessors
+          # Use cores-1 to leave room for system
+          $optimal = [Math]::Max(1, $cores - 1)
+          echo "BUILD_CORES=$optimal" >> $env:GITHUB_ENV
+
+      # 3) Set up Rust with specific target and components
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-gnu
           components: rustfmt, clippy
 
-      # 3) Cache Rust dependencies and build artifacts
+      # 4) Improved Rust caching with more granular keys
       - name: Cache Rust
         uses: actions/cache@v3
         with:
@@ -56,17 +61,22 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+            # Add Rust build artifacts
+            target/x86_64-pc-windows-gnu/release/
+            target/x86_64-pc-windows-gnu/release/deps/
+            target/x86_64-pc-windows-gnu/release/build/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml', 'rust-toolchain.toml') }}-v1
           restore-keys: |
+            ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-v1
             ${{ runner.os }}-cargo-
 
-      # 4) Set up Node.js
+      # 5) Set up Node.js
       - name: Set up Node.js
         uses: actions/setup-node@v2
         with:
           node-version: 'lts/*'
 
-      # 5) Cache node_modules and electron
+      # 6) Cache node_modules and electron with improved keys
       - name: Cache node_modules and electron
         uses: actions/cache@v3
         with:
@@ -75,44 +85,75 @@ jobs:
             ui/desktop/node_modules
             ${{ github.workspace }}/.cache/electron
             ${{ github.workspace }}/.cache/electron-builder
-          key: ${{ runner.os }}-build-desktop-windows-${{ hashFiles('**/package-lock.json') }}
+            # Add npm cache
+            ~/.npm
+          key: ${{ runner.os }}-build-desktop-windows-${{ hashFiles('**/package-lock.json', '**/package.json') }}-v1
           restore-keys: |
+            ${{ runner.os }}-build-desktop-windows-${{ hashFiles('**/package-lock.json') }}-v1
             ${{ runner.os }}-build-desktop-windows-
 
-      # 6) Install top-level dependencies if a package.json is in root
+      # 7) Install top-level dependencies if a package.json is in root
       - name: Install top-level deps
         run: |
           if (Test-Path package.json) {
             npm install
           }
 
-      # 7) Cache and install MinGW
+      # 8) Improved MinGW toolchain caching
       - name: Cache MinGW
         uses: actions/cache@v3
         with:
-          path: C:\ProgramData\chocolatey\lib\mingw
-          key: ${{ runner.os }}-mingw-8.1.0
+          path: |
+            C:\ProgramData\chocolatey\lib\mingw
+            C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin
+            # Add specific DLL paths
+            C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\x86_64-w64-mingw32\lib
+          key: ${{ runner.os }}-mingw-8.1.0-${{ hashFiles('.github/workflows/bundle-desktop-windows.yml') }}-v1
+          restore-keys: |
+            ${{ runner.os }}-mingw-8.1.0-v1
 
       - name: Install MinGW dependencies
         run: |
           if (!(Test-Path "C:\ProgramData\chocolatey\lib\mingw")) {
-            choco install mingw --version=8.1.0
+            Write-Host "Installing MinGW..."
+            choco install mingw --version=8.1.0 --no-progress
+          } else {
+            Write-Host "Using cached MinGW installation"
           }
-          # Debug - check installation paths
-          Write-Host "Checking MinGW installation..."
-          Get-ChildItem -Path "C:\ProgramData\chocolatey\lib\mingw" -Recurse -Filter "*.dll" | ForEach-Object {
-            Write-Host $_.FullName
+          
+          # Verify MinGW installation
+          Write-Host "Verifying MinGW installation..."
+          $requiredDlls = @(
+            "libstdc++-6.dll",
+            "libgcc_s_seh-1.dll",
+            "libwinpthread-1.dll"
+          )
+          
+          $mingwPath = "C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin"
+          $missingDlls = $false
+          
+          foreach ($dll in $requiredDlls) {
+            if (!(Test-Path "$mingwPath\$dll")) {
+              Write-Host "Missing required DLL: $dll"
+              $missingDlls = $true
+            }
           }
-          Get-ChildItem -Path "C:\tools" -Recurse -Filter "*.dll" | ForEach-Object {
-            Write-Host $_.FullName
+          
+          if ($missingDlls) {
+            Write-Error "MinGW installation is incomplete"
+            exit 1
           }
 
-      # 8) Cargo build for Windows with parallel jobs
+      # 9) Optimized Cargo build for Windows with dynamic parallel jobs
       - name: Cargo build for Windows
+        env:
+          CARGO_NET_GIT_FETCH_WITH_CLI: true  # Use git CLI for better performance
+          CARGO_BUILD_JOBS: ${{ env.BUILD_CORES }}
         run: |
-          cargo build --release --target x86_64-pc-windows-gnu -j 4
+          Write-Host "Building with $env:CARGO_BUILD_JOBS cores"
+          cargo build --release --target x86_64-pc-windows-gnu -j $env:CARGO_BUILD_JOBS
 
-      # 9) Check that the compiled goosed.exe exists and copy exe/dll to ui/desktop/src/bin
+      # 10) Check that the compiled goosed.exe exists and copy exe/dll to ui/desktop/src/bin
       - name: Prepare Windows binary and DLLs
         run: |
           if (!(Test-Path .\target\x86_64-pc-windows-gnu\release\goosed.exe)) {
@@ -124,35 +165,27 @@ jobs:
           }
           Copy-Item .\target\x86_64-pc-windows-gnu\release\goosed.exe ui\desktop\src\bin\
           
-          # Copy MinGW DLLs - try both possible locations
-          $mingwPaths = @(
-            "C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin",
-            "C:\tools\mingw64\bin"
-          )
+          # Use cached MinGW DLLs
+          $mingwPath = "C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin"
+          Write-Host "Copying MinGW DLLs from $mingwPath"
+          Copy-Item "$mingwPath\libstdc++-6.dll" ui\desktop\src\bin\
+          Copy-Item "$mingwPath\libgcc_s_seh-1.dll" ui\desktop\src\bin\
+          Copy-Item "$mingwPath\libwinpthread-1.dll" ui\desktop\src\bin\
           
-          foreach ($path in $mingwPaths) {
-            if (Test-Path "$path\libstdc++-6.dll") {
-              Write-Host "Found MinGW DLLs in $path"
-              Copy-Item "$path\libstdc++-6.dll" ui\desktop\src\bin\
-              Copy-Item "$path\libgcc_s_seh-1.dll" ui\desktop\src\bin\
-              Copy-Item "$path\libwinpthread-1.dll" ui\desktop\src\bin\
-              break
-            }
-          }
-          
-          # Copy any other DLLs from the release directory
-          ls .\target\x86_64-pc-windows-gnu\release\*.dll | ForEach-Object {
-            Copy-Item $_ ui\desktop\src\bin\
+          # Copy any additional DLLs from the release directory
+          Get-ChildItem .\target\x86_64-pc-windows-gnu\release\*.dll | ForEach-Object {
+            Write-Host "Copying additional DLL: $($_.Name)"
+            Copy-Item $_.FullName ui\desktop\src\bin\
           }
 
-      # 10) Install & build UI desktop with parallel processing
+      # 11) Install & build UI desktop with parallel processing
       - name: Build desktop UI with npm
         run: |
           cd ui\desktop
           npm install --prefer-offline --no-audit
           npm run bundle:windows
 
-      # 11) Copy exe/dll to final out/Goose-win32-x64/resources/bin
+      # 12) Copy exe/dll to final out/Goose-win32-x64/resources/bin
       - name: Copy exe/dll to out folder
         run: |
           cd ui\desktop
@@ -160,11 +193,12 @@ jobs:
             New-Item -ItemType Directory -Path .\out\Goose-win32-x64\resources\bin | Out-Null
           }
           Copy-Item .\src\bin\goosed.exe .\out\Goose-win32-x64\resources\bin\
-          ls .\src\bin\*.dll | ForEach-Object {
-            Copy-Item $_ .\out\Goose-win32-x64\resources\bin\
+          Get-ChildItem .\src\bin\*.dll | ForEach-Object {
+            Write-Host "Copying to output: $($_.Name)"
+            Copy-Item $_.FullName .\out\Goose-win32-x64\resources\bin\
           }
 
-      # 12) Code signing (if enabled)
+      # 13) Code signing (if enabled)
       - name: Sign Windows executable
         if: inputs.signing && inputs.signing == true
         env:
@@ -183,7 +217,7 @@ jobs:
           # Clean up the certificate
           Remove-Item -Path $certPath
 
-      # 13) Upload the final Windows build
+      # 14) Upload the final Windows build
       - name: Upload Windows build artifacts
         uses: actions/upload-artifact@v4
         with:
