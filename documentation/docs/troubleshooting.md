@@ -157,6 +157,75 @@ Welcome to goose! Let's get you set up with a provider.
 
 ---
 
+### Package Runners
+
+Many of the external extensions require a package runner. For example, if you run into an error like this one:
+
+```
+Failed to start extension: {extension name}, "No such file or directory (os error 2)"
+Please check extension configuration for {extension name}.
+```
+
+... it signals that the extension may not have been installed and you need the package runner in order to do so.
+
+An example is the GitHub extension whose command is `npx -y @modelcontextprotocol/server-github`. You'd need [Node.js](https://nodejs.org/) installed on your system to run this command, as it uses npx.
+
+---
+
+### macOS Permission Issues (M3 Macs)
+
+If you encounter an issue where the Goose desktop app shows no window on launch, it may be due to file and folder permissions. This typically happens because Goose needs read and write access to the `~/.config` directory to create its log directory and file.
+
+#### How to Check and Fix Permissions:
+
+1. Open Terminal.
+2. Run the following command to check the current permissions for ~/.config:
+  ```sh
+  ls -ld ~/.config
+  ```
+**Example output:**
+  ```sh
+  drwx------  7 yourusername  staff  224 Jan 15 12:00 /Users/yourusername/.config
+  ```
+`rwx` indicates you have read (r), write (w), and execute (x) permissions for your user. If you do not see `rwx` for your user, follow the steps below.
+
+#### How to Grant Read and Write Permissions:
+
+1. To add the correct permissions, run the following commands:
+    ```sh
+    chmod u+rw ~/.config
+    ```
+    If the ~/.config directory does not exist, create it and then assign permissions:
+      ```sh
+      mkdir -p ~/.config
+      chmod u+rw ~/.config
+      ```
+2. Verify the change:
+    ```sh
+    ls -ld ~/.config
+    ```
+---
+
+### Connection Error with Ollama Provider on WSL
+
+If you encounter an error like this when setting up Ollama as the provider in Goose:
+    ```
+    Execution error: error sending request for url (http://localhost:11434/v1/chat/completions)
+    ```
+This likely means that the local host address is not accessible from WSL.
+1. Check if the service is running:
+    ```
+    curl http://localhost:11434/api/tags
+    ```
+    If you receive a `failed to connect` error, it’s possible that WSL is using a different IP for localhost. In that case, run the following command to find the correct IP address for WSL:
+    ```
+    ip route show | grep -i default | awk '{ print $3 }'
+    ```
+2. Once you get the IP address, use it in your Goose configuration instead of localhost. For example:
+    ```
+    http://172.24.80.1:11434
+    ```
+---
 ### Need Further Help? 
 If you have questions, run into issues, or just need to brainstorm ideas join the [Discord Community][discord]!
 

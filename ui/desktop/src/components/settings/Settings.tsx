@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { ScrollArea } from '../ui/scroll-area';
-import { useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { Settings as SettingsType } from './types';
 import {
@@ -15,6 +14,7 @@ import { ConfigureBuiltInExtensionModal } from './extensions/ConfigureBuiltInExt
 import BackButton from '../ui/BackButton';
 import { RecentModelsRadio } from './models/RecentModels';
 import { ExtensionItem } from './extensions/ExtensionItem';
+import type { View } from '../../ChatWindow';
 
 const EXTENSIONS_DESCRIPTION =
   'The Model Context Protocol (MCP) is a system that allows AI models to securely connect with local or remote resources using standard server setups. It works like a client-server setup and expands AI capabilities using three main components: Prompts, Resources, and Tools.';
@@ -46,9 +46,18 @@ const DEFAULT_SETTINGS: SettingsType = {
   extensions: BUILT_IN_EXTENSIONS,
 };
 
-export default function Settings() {
-  const navigate = useNavigate();
-  const location = useLocation();
+// We'll accept two props:
+// onClose: to go back to chat
+// setView: to switch to moreModels, configureProviders, etc.
+export default function Settings({
+  onClose,
+  setView,
+}: {
+  onClose: () => void;
+  setView: (view: View) => void;
+}) {
+  // We'll read query params from window.location instead of react-router's useLocation
+  const [searchParams] = useState(() => new URLSearchParams(window.location.search));
 
   const [settings, setSettings] = React.useState<SettingsType>(() => {
     const saved = localStorage.getItem('user_settings');
@@ -96,9 +105,8 @@ export default function Settings() {
 
   // Handle URL parameters for auto-opening extension configuration
   useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const extensionId = params.get('extensionId');
-    const showEnvVars = params.get('showEnvVars');
+    const extensionId = searchParams.get('extensionId');
+    const showEnvVars = searchParams.get('showEnvVars');
 
     if (extensionId && showEnvVars === 'true') {
       // Find the extension in settings
@@ -113,7 +121,9 @@ export default function Settings() {
         }
       }
     }
-  }, [location.search, settings.extensions]);
+    // We only run this once on load
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.extensions]);
 
   const handleExtensionToggle = async (extensionId: string) => {
     // Find the extension to get its current state
@@ -160,33 +170,18 @@ export default function Settings() {
         extensions: prev.extensions.filter((ext) => ext.id !== extensionBeingConfigured.id),
       }));
       setExtensionBeingConfigured(null);
-      navigate('/settings', { replace: true });
-    }
-  };
-
-  const handleNavClick = (section: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    const scrollArea = document.querySelector('[data-radix-scroll-area-viewport]');
-    const element = document.getElementById(section.toLowerCase());
-
-    if (scrollArea && element) {
-      const topPos = element.offsetTop;
-      scrollArea.scrollTo({
-        top: topPos,
-        behavior: 'smooth',
-      });
     }
   };
 
   const handleExtensionConfigSubmit = () => {
     setExtensionBeingConfigured(null);
-    // Clear the URL parameters after configuration
-    navigate('/settings', { replace: true });
   };
 
   const isBuiltIn = (extensionId: string) => {
     return BUILT_IN_EXTENSIONS.some((builtIn) => builtIn.id === extensionId);
   };
+
+  function navigate(s: string) {}
 
   return (
     <div className="h-screen w-full">
@@ -197,7 +192,8 @@ export default function Settings() {
           <div className="px-8 pt-6 pb-4">
             <BackButton
               onClick={() => {
-                navigate('/chat/1', { replace: true });
+                // Instead of navigate('/chat/1', { replace: true });
+                onClose();
               }}
             />
             <h1 className="text-3xl font-medium text-textStandard mt-1">Settings</h1>
@@ -210,7 +206,10 @@ export default function Settings() {
                 <div className="flex justify-between items-center mb-6 border-b border-borderSubtle px-8">
                   <h2 className="text-xl font-medium text-textStandard">Models</h2>
                   <button
-                    onClick={() => navigate('/settings/more-models')}
+                    onClick={() => {
+                      // Instead of navigate('/settings/more-models'):
+                      setView('moreModels');
+                    }}
                     className="text-indigo-500 hover:text-indigo-600 text-sm"
                   >
                     Browse
@@ -230,7 +229,6 @@ export default function Settings() {
                       className="text-indigo-500 hover:text-indigo-600 text-sm"
                       title="Add Manually"
                     >
-                      {/* <Plus className="h-4 w-4" /> */}
                       Add
                     </button>
 
@@ -255,12 +253,33 @@ export default function Settings() {
                       <ExtensionItem
                         key={ext.id}
                         {...ext}
-                        canConfigure={true} // Ensure gear icon always appears
+                        canConfigure={true}
                         onToggle={handleExtensionToggle}
                         onConfigure={(extension) => setExtensionBeingConfigured(extension)}
                       />
                     ))
                   )}
+                </div>
+              </section>
+
+              <section id="configuration">
+                <div className="flex justify-between items-center mb-6 border-b border-borderSubtle px-8">
+                  <h2 className="text-xl font-semibold text-textStandard">Configuration</h2>
+                  <div className="flex gap-4">
+                    <button
+                      onClick={() => navigate('/settings/config')}
+                      className="text-indigo-500 hover:text-indigo-600 text-sm"
+                    >
+                      Manage
+                    </button>
+                  </div>
+                </div>
+
+                <div className="px-8">
+                  <p className="text-sm text-textStandard mb-4">
+                    Manage application configuration and settings. You can view, add, edit, and
+                    remove configuration values.
+                  </p>
                 </div>
               </section>
             </div>
@@ -273,7 +292,6 @@ export default function Settings() {
           isOpen={!!extensionBeingConfigured && isBuiltIn(extensionBeingConfigured.id)}
           onClose={() => {
             setExtensionBeingConfigured(null);
-            navigate('/settings', { replace: true });
           }}
           extension={extensionBeingConfigured}
           onSubmit={handleExtensionConfigSubmit}
@@ -283,8 +301,6 @@ export default function Settings() {
           isOpen={!!extensionBeingConfigured}
           onClose={() => {
             setExtensionBeingConfigured(null);
-            // Clear URL parameters when closing manually
-            navigate('/settings', { replace: true });
           }}
           extension={extensionBeingConfigured}
           onSubmit={handleExtensionConfigSubmit}

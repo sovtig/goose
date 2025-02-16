@@ -1,9 +1,12 @@
 use super::base::Usage;
 use anyhow::Result;
+use base64::Engine;
 use regex::Regex;
 use reqwest::{Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
+use std::io::Read;
+use std::path::Path;
 
 use crate::providers::errors::ProviderError;
 use mcp_core::content::ImageContent;
@@ -40,31 +43,33 @@ pub fn convert_image(image: &ImageContent, image_format: &ImageFormat) -> Value 
 pub async fn handle_response_openai_compat(response: Response) -> Result<Value, ProviderError> {
     let status = response.status();
     // Try to parse the response body as JSON (if applicable)
-    let payload: Option<Value> = response.json().await.ok();
+    let payload = match response.json::<Value>().await {
+        Ok(json) => json,
+        Err(e) => return Err(ProviderError::RequestFailed(e.to_string())),
+    };
 
     match status {
-        StatusCode::OK => payload.ok_or_else( || ProviderError::RequestFailed("Response body is not valid JSON".to_string()) ),
+        StatusCode::OK => Ok(payload),
         StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
             Err(ProviderError::Authentication(format!("Authentication failed. Please ensure your API keys are valid and have the required permissions. \
                 Status: {}. Response: {:?}", status, payload)))
         }
         StatusCode::BAD_REQUEST => {
             let mut message = "Unknown error".to_string();
-            if let Some(payload) = &payload {
-                if let Some(error) = payload.get("error") {
-                tracing::debug!("Bad Request Error: {error:?}");
-                message = error
-                          .get("message")
-                          .and_then(|m| m.as_str())
-                          .unwrap_or("Unknown error")
-                          .to_string();
+            if let Some(error) = payload.get("error") {
+            tracing::debug!("Bad Request Error: {error:?}");
+            message = error
+                        .get("message")
+                        .and_then(|m| m.as_str())
+                        .unwrap_or("Unknown error")
+                        .to_string();
 
-                if let Some(code) = error.get("code").and_then(|c| c.as_str()) {
-                    if code == "context_length_exceeded" || code == "string_above_max_length" {
-                        return Err(ProviderError::ContextLengthExceeded(message));
-                    }
+            if let Some(code) = error.get("code").and_then(|c| c.as_str()) {
+                if code == "context_length_exceeded" || code == "string_above_max_length" {
+                    return Err(ProviderError::ContextLengthExceeded(message));
                 }
-            }}
+            }
+            }
             tracing::debug!(
                 "{}", format!("Provider request failed with status: {}. Payload: {:?}", status, payload)
             );
@@ -106,6 +111,91 @@ pub fn get_model(data: &Value) -> String {
     } else {
         "Unknown".to_string()
     }
+}
+
+/// Check if a file is actually an image by examining its magic bytes
+fn is_image_file(path: &Path) -> bool {
+    if let Ok(mut file) = std::fs::File::open(path) {
+        let mut buffer = [0u8; 8]; // Large enough for most image magic numbers
+        if file.read(&mut buffer).is_ok() {
+            // Check magic numbers for common image formats
+            return match &buffer[0..4] {
+                // PNG: 89 50 4E 47
+                [0x89, 0x50, 0x4E, 0x47] => true,
+                // JPEG: FF D8 FF
+                [0xFF, 0xD8, 0xFF, _] => true,
+                _ => false,
+            };
+        }
+    }
+    false
+}
+
+/// Detect if a string contains a path to an image file
+pub fn detect_image_path(text: &str) -> Option<&str> {
+    // Basic image file extension check
+    let extensions = [".png", ".jpg", ".jpeg"];
+
+    // Find any word that ends with an image extension
+    for word in text.split_whitespace() {
+        if extensions
+            .iter()
+            .any(|ext| word.to_lowercase().ends_with(ext))
+        {
+            let path = Path::new(word);
+            // Check if it's an absolute path and file exists
+            if path.is_absolute() && path.is_file() {
+                // Verify it's actually an image file
+                if is_image_file(path) {
+                    return Some(word);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Convert a local image file to base64 encoded ImageContent
+pub fn load_image_file(path: &str) -> Result<ImageContent, ProviderError> {
+    let path = Path::new(path);
+
+    // Verify it's an image before proceeding
+    if !is_image_file(path) {
+        return Err(ProviderError::RequestFailed(
+            "File is not a valid image".to_string(),
+        ));
+    }
+
+    // Read the file
+    let bytes = std::fs::read(path)
+        .map_err(|e| ProviderError::RequestFailed(format!("Failed to read image file: {}", e)))?;
+
+    // Detect mime type from extension
+    let mime_type = match path.extension().and_then(|e| e.to_str()) {
+        Some(ext) => match ext.to_lowercase().as_str() {
+            "png" => "image/png",
+            "jpg" | "jpeg" => "image/jpeg",
+            _ => {
+                return Err(ProviderError::RequestFailed(
+                    "Unsupported image format".to_string(),
+                ))
+            }
+        },
+        None => {
+            return Err(ProviderError::RequestFailed(
+                "Unknown image format".to_string(),
+            ))
+        }
+    };
+
+    // Convert to base64
+    let data = base64::prelude::BASE64_STANDARD.encode(&bytes);
+
+    Ok(ImageContent {
+        mime_type: mime_type.to_string(),
+        data,
+        annotations: None,
+    })
 }
 
 pub fn unescape_json_values(value: &Value) -> Value {
@@ -163,6 +253,83 @@ pub fn emit_debug_trace<T: serde::Serialize>(
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn test_detect_image_path() {
+        // Create a temporary PNG file with valid PNG magic numbers
+        let temp_dir = tempfile::tempdir().unwrap();
+        let png_path = temp_dir.path().join("test.png");
+        let png_data = [
+            0x89, 0x50, 0x4E, 0x47, // PNG magic number
+            0x0D, 0x0A, 0x1A, 0x0A, // PNG header
+            0x00, 0x00, 0x00, 0x0D, // Rest of fake PNG data
+        ];
+        std::fs::write(&png_path, &png_data).unwrap();
+        let png_path_str = png_path.to_str().unwrap();
+
+        // Create a fake PNG (wrong magic numbers)
+        let fake_png_path = temp_dir.path().join("fake.png");
+        std::fs::write(&fake_png_path, b"not a real png").unwrap();
+
+        // Test with valid PNG file using absolute path
+        let text = format!("Here is an image {}", png_path_str);
+        assert_eq!(detect_image_path(&text), Some(png_path_str));
+
+        // Test with non-image file that has .png extension
+        let text = format!("Here is a fake image {}", fake_png_path.to_str().unwrap());
+        assert_eq!(detect_image_path(&text), None);
+
+        // Test with non-existent file
+        let text = "Here is a fake.png that doesn't exist";
+        assert_eq!(detect_image_path(text), None);
+
+        // Test with non-image file
+        let text = "Here is a file.txt";
+        assert_eq!(detect_image_path(text), None);
+
+        // Test with relative path (should not match)
+        let text = "Here is a relative/path/image.png";
+        assert_eq!(detect_image_path(text), None);
+    }
+
+    #[test]
+    fn test_load_image_file() {
+        // Create a temporary PNG file with valid PNG magic numbers
+        let temp_dir = tempfile::tempdir().unwrap();
+        let png_path = temp_dir.path().join("test.png");
+        let png_data = [
+            0x89, 0x50, 0x4E, 0x47, // PNG magic number
+            0x0D, 0x0A, 0x1A, 0x0A, // PNG header
+            0x00, 0x00, 0x00, 0x0D, // Rest of fake PNG data
+        ];
+        std::fs::write(&png_path, &png_data).unwrap();
+        let png_path_str = png_path.to_str().unwrap();
+
+        // Create a fake PNG (wrong magic numbers)
+        let fake_png_path = temp_dir.path().join("fake.png");
+        std::fs::write(&fake_png_path, b"not a real png").unwrap();
+        let fake_png_path_str = fake_png_path.to_str().unwrap();
+
+        // Test loading valid PNG file
+        let result = load_image_file(png_path_str);
+        assert!(result.is_ok());
+        let image = result.unwrap();
+        assert_eq!(image.mime_type, "image/png");
+
+        // Test loading fake PNG file
+        let result = load_image_file(fake_png_path_str);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("not a valid image"));
+
+        // Test non-existent file
+        let result = load_image_file("nonexistent.png");
+        assert!(result.is_err());
+    }
 
     #[test]
     fn test_sanitize_function_name() {

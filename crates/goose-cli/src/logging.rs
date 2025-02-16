@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use etcetera::{choose_app_strategy, AppStrategy};
 use std::fs;
 use std::path::PathBuf;
 use tracing_appender::rolling::Rotation;
@@ -12,12 +13,16 @@ use goose::tracing::langfuse_layer;
 /// Returns the directory where log files should be stored.
 /// Creates the directory structure if it doesn't exist.
 fn get_log_directory() -> Result<PathBuf> {
-    let home = std::env::var("HOME").context("HOME environment variable not set")?;
-    let base_log_dir = PathBuf::from(home)
-        .join(".config")
-        .join("goose")
-        .join("logs")
-        .join("cli"); // Add cli-specific subdirectory
+    // choose_app_strategy().state_dir()
+    // - macOS/Linux: ~/.local/state/goose/logs/cli
+    // - Windows:     ~\AppData\Roaming\Block\goose\data\logs\cli
+    // - Windows has no convention for state_dir, use data_dir instead
+    let home_dir = choose_app_strategy(crate::APP_STRATEGY.clone())
+        .context("HOME environment variable not set")?;
+
+    let base_log_dir = home_dir
+        .in_state_dir("logs/cli")
+        .unwrap_or_else(|| home_dir.in_data_dir("logs/cli"));
 
     // Create date-based subdirectory
     let now = chrono::Local::now();
@@ -114,7 +119,11 @@ mod tests {
 
     fn setup_temp_home() -> TempDir {
         let temp_dir = TempDir::new().unwrap();
-        env::set_var("HOME", temp_dir.path());
+        if cfg!(windows) {
+            env::set_var("USERPROFILE", temp_dir.path());
+        } else {
+            env::set_var("HOME", temp_dir.path());
+        }
         temp_dir
     }
 
@@ -191,7 +200,7 @@ mod tests {
         let original_vars = [
             ("LANGFUSE_PUBLIC_KEY", env::var("LANGFUSE_PUBLIC_KEY").ok()),
             ("LANGFUSE_SECRET_KEY", env::var("LANGFUSE_SECRET_KEY").ok()),
-            ("LANGFUSE_HOST", env::var("LANGFUSE_HOST").ok()),
+            ("LANGFUSE_URL", env::var("LANGFUSE_URL").ok()),
             (
                 "LANGFUSE_INIT_PROJECT_PUBLIC_KEY",
                 env::var("LANGFUSE_INIT_PROJECT_PUBLIC_KEY").ok(),

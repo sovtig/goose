@@ -184,6 +184,10 @@ const config: Config = {
               label: "BlueSky",
               href: "https://bsky.app/profile/opensource.block.xyz",
             },
+            {
+              label: "Nostr",
+              href: "https://njump.me/opensource@block.xyz",
+            },
           ],
         },
         {

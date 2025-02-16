@@ -1,31 +1,18 @@
 use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
 
-mod commands;
-mod log_usage;
-mod logging;
-mod prompt;
-mod session;
-
-use commands::agent_version::AgentCommand;
-use commands::configure::handle_configure;
-use commands::mcp::run_server;
-use commands::session::build_session;
-use commands::version::print_version;
 use console::style;
 use goose::config::Config;
-use logging::setup_logging;
+use goose_cli::commands::agent_version::AgentCommand;
+use goose_cli::commands::configure::handle_configure;
+use goose_cli::commands::mcp::run_server;
+use goose_cli::logging::setup_logging;
+use goose_cli::session::build_session;
 use std::io::{self, Read};
 
-#[cfg(test)]
-mod test_helpers;
-
 #[derive(Parser)]
-#[command(author, about, long_about = None)]
+#[command(author, version, display_name = "", about, long_about = None)]
 struct Cli {
-    #[arg(short = 'v', long = "version")]
-    version: bool,
-
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -60,8 +47,8 @@ enum Command {
         #[arg(
             short,
             long,
-            help = "Resume a previous session (last used or specified by --session)",
-            long_help = "Continue from a previous chat session. If --session is provided, resumes that specific session. Otherwise resumes the last used session."
+            help = "Resume a previous session (last used or specified by --name)",
+            long_help = "Continue from a previous chat session. If --name is provided, resumes that specific session. Otherwise resumes the last used session."
         )]
         resume: bool,
 
@@ -165,11 +152,6 @@ enum CliProviderVariant {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
-
-    if cli.version {
-        print_version();
-        return Ok(());
-    }
 
     match cli.command {
         Some(Command::Configure {}) => {

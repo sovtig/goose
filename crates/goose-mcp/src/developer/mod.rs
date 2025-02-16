@@ -1,7 +1,9 @@
 mod lang;
+mod shell;
 
 use anyhow::Result;
 use base64::Engine;
+use etcetera::{choose_app_strategy, AppStrategy};
 use indoc::formatdoc;
 use serde_json::{json, Value};
 use std::{
@@ -14,8 +16,10 @@ use std::{
 use tokio::process::Command;
 use url::Url;
 
+use include_dir::{include_dir, Dir};
+use mcp_core::prompt::{Prompt, PromptArgument, PromptTemplate};
 use mcp_core::{
-    handler::{ResourceError, ToolError},
+    handler::{PromptError, ResourceError, ToolError},
     protocol::ServerCapabilities,
     resource::Resource,
     tool::Tool,
@@ -26,15 +30,66 @@ use mcp_server::Router;
 use mcp_core::content::Content;
 use mcp_core::role::Role;
 
+use self::shell::{
+    expand_path, format_command_for_platform, get_shell_config, is_absolute_path,
+    normalize_line_endings,
+};
 use indoc::indoc;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use xcap::{Monitor, Window};
 
+// Embeds the prompts directory to the build
+static PROMPTS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/src/developer/prompts");
+
+/// Loads prompt files from the embedded PROMPTS_DIR and returns a HashMap of prompts.
+/// Ensures that each prompt name is unique.
+pub fn load_prompt_files() -> HashMap<String, Prompt> {
+    let mut prompts = HashMap::new();
+
+    for entry in PROMPTS_DIR.files() {
+        let prompt_str = String::from_utf8_lossy(entry.contents()).into_owned();
+
+        let template: PromptTemplate = match serde_json::from_str(&prompt_str) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!(
+                    "Failed to parse prompt template in {}: {}",
+                    entry.path().display(),
+                    e
+                );
+                continue; // Skip invalid prompt file
+            }
+        };
+
+        let arguments = template
+            .arguments
+            .into_iter()
+            .map(|arg| PromptArgument {
+                name: arg.name,
+                description: arg.description,
+                required: arg.required,
+            })
+            .collect();
+
+        let prompt = Prompt::new(&template.id, &template.template, arguments);
+
+        if prompts.contains_key(&prompt.name) {
+            eprintln!("Duplicate prompt name '{}' found. Skipping.", prompt.name);
+            continue; // Skip duplicate prompt name
+        }
+
+        prompts.insert(prompt.name.clone(), prompt);
+    }
+
+    prompts
+}
+
 pub struct DeveloperRouter {
     tools: Vec<Tool>,
-    file_history: Arc<Mutex<HashMap<PathBuf, Vec<String>>>>,
+    prompts: Arc<HashMap<String, Prompt>>,
     instructions: String,
+    file_history: Arc<Mutex<HashMap<PathBuf, Vec<String>>>>,
 }
 
 impl Default for DeveloperRouter {
@@ -48,9 +103,30 @@ impl DeveloperRouter {
         // TODO consider rust native search tools, we could use
         // https://docs.rs/ignore/latest/ignore/
 
-        let bash_tool = Tool::new(
-            "shell".to_string(),
-            indoc! {r#"
+        // Get OS-specific shell tool description
+        let shell_tool_desc = match std::env::consts::OS {
+            "windows" => indoc! {r#"
+                Execute a command in the shell.
+
+                This will return the output and error concatenated into a single string, as
+                you would see from running on the command line. There will also be an indication
+                of if the command succeeded or failed.
+
+                Avoid commands that produce a large amount of output, and consider piping those outputs to files.
+
+                **Important**: For searching files and code:
+
+                Preferred: Use ripgrep (`rg`) when available - it respects .gitignore and is fast:
+                  - To locate a file by name: `rg --files | rg example.py`
+                  - To locate content inside files: `rg 'class Example'`
+
+                Alternative Windows commands (if ripgrep is not installed):
+                  - To locate a file by name: `dir /s /b example.py`
+                  - To locate content inside files: `findstr /s /i "class Example" *.py`
+
+                Note: Alternative commands may show ignored/hidden files that should be excluded.
+            "#},
+            _ => indoc! {r#"
                 Execute a command in the shell.
 
                 This will return the output and error concatenated into a single string, as
@@ -61,11 +137,20 @@ impl DeveloperRouter {
                 If you need to run a long lived command, background it - e.g. `uvicorn main:app &` so that
                 this tool does not run indefinitely.
 
+                **Important**: Each shell command runs in its own process. Things like directory changes or
+                sourcing files do not persist between tool calls. So you may need to repeat them each time by
+                stringing together commands, e.g. `cd example && ls` or `source env/bin/activate && pip install numpy`
+
                 **Important**: Use ripgrep - `rg` - when you need to locate a file or a code reference, other solutions
                 may show ignored or hidden files. For example *do not* use `find` or `ls -r`
-                  - To locate a file by name: `rg --files | rg example.py`
-                  - To locate consent inside files: `rg 'class Example'`
-            "#}.to_string(),
+                  - List files by name: `rg --files | rg <filename>`
+                  - List files that contain a regex: `rg '<regex>' -l`
+            "#},
+        };
+
+        let bash_tool = Tool::new(
+            "shell".to_string(),
+            shell_tool_desc.to_string(),
             json!({
                 "type": "object",
                 "required": ["command"],
@@ -157,9 +242,31 @@ impl DeveloperRouter {
 
         // Get base instructions and working directory
         let cwd = std::env::current_dir().expect("should have a current working dir");
-        let base_instructions = formatdoc! {r#"
-            The developer extension gives you the capabilities to edit code files and run shell commands,
-            and can be used to solve a wide range of problems.
+        let os = std::env::consts::OS;
+
+        let base_instructions = match os {
+            "windows" => formatdoc! {r#"
+                The developer extension gives you the capabilities to edit code files and run shell commands,
+                and can be used to solve a wide range of problems.
+
+                You can use the shell tool to run Windows commands (PowerShell or CMD).
+                When using paths, you can use either backslashes or forward slashes.
+
+                Use the shell tool as needed to locate files or interact with the project.
+
+                Your windows/screen tools can be used for visual debugging. You should not use these tools unless
+                prompted to, but you can mention they are available if they are relevant.
+
+                operating system: {os}
+                current directory: {cwd}
+
+                "#,
+                os=os,
+                cwd=cwd.to_string_lossy(),
+            },
+            _ => formatdoc! {r#"
+                The developer extension gives you the capabilities to edit code files and run shell commands,
+                and can be used to solve a wide range of problems.
 
             You can use the shell tool to run any command that would work on the relevant operating system.
             Use the shell tool as needed to locate files or interact with the project.
@@ -170,14 +277,22 @@ impl DeveloperRouter {
             operating system: {os}
             current directory: {cwd}
 
-            "#,
-            os=std::env::consts::OS,
-            cwd=cwd.to_string_lossy(),
+                "#,
+                os=os,
+                cwd=cwd.to_string_lossy(),
+            },
         };
 
-        // Check for global hints in ~/.config/goose/.goosehints
-        let global_hints_path =
-            PathBuf::from(shellexpand::tilde("~/.config/goose/.goosehints").to_string());
+        // choose_app_strategy().config_dir()
+        // - macOS/Linux: ~/.config/goose/
+        // - Windows:     ~\AppData\Roaming\Block\goose\config\
+        // keep previous behavior of expanding ~/.config in case this fails
+        let global_hints_path = choose_app_strategy(crate::APP_STRATEGY.clone())
+            .map(|strategy| strategy.in_config_dir(".goosehints"))
+            .unwrap_or_else(|_| {
+                PathBuf::from(shellexpand::tilde("~/.config/goose/.goosehints").to_string())
+            });
+
         // Create the directory if it doesn't exist
         let _ = std::fs::create_dir_all(global_hints_path.parent().unwrap());
 
@@ -218,20 +333,21 @@ impl DeveloperRouter {
                 list_windows_tool,
                 screen_capture_tool,
             ],
-            file_history: Arc::new(Mutex::new(HashMap::new())),
+            prompts: Arc::new(load_prompt_files()),
             instructions,
+            file_history: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
-    // Helper method to resolve a path relative to cwd
+    // Helper method to resolve a path relative to cwd with platform-specific handling
     fn resolve_path(&self, path_str: &str) -> Result<PathBuf, ToolError> {
         let cwd = std::env::current_dir().expect("should have a current working dir");
-        let expanded = shellexpand::tilde(path_str);
-        let path = Path::new(expanded.as_ref());
+        let expanded = expand_path(path_str);
+        let path = Path::new(&expanded);
 
         let suggestion = cwd.join(path);
 
-        match path.is_absolute() {
+        match is_absolute_path(&expanded) {
             true => Ok(path.to_path_buf()),
             false => Err(ToolError::InvalidParameters(format!(
                 "The path {} is not an absolute path, did you possibly mean {}?",
@@ -241,7 +357,7 @@ impl DeveloperRouter {
         }
     }
 
-    // Implement bash tool functionality
+    // Shell command execution with platform-specific handling
     async fn bash(&self, params: Value) -> Result<Vec<Content>, ToolError> {
         let command =
             params
@@ -251,19 +367,17 @@ impl DeveloperRouter {
                     "The command string is required".to_string(),
                 ))?;
 
-        // TODO consider command suggestions and safety rails
+        // Get platform-specific shell configuration
+        let shell_config = get_shell_config();
+        let cmd_with_redirect = format_command_for_platform(command);
 
-        // TODO be more careful about backgrounding, revisit interleave
-        // Redirect stderr to stdout to interleave outputs
-        let cmd_with_redirect = format!("{} 2>&1", command);
-
-        // Execute the command
-        let child = Command::new("bash")
-            .stdout(Stdio::piped()) // These two pipes required to capture output later.
+        // Execute the command using platform-specific shell
+        let child = Command::new(&shell_config.executable)
+            .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .stdin(Stdio::null())
-            .kill_on_drop(true) // Critical so that the command is killed when the agent.reply stream is interrupted.
-            .arg("-c")
+            .kill_on_drop(true)
+            .arg(&shell_config.arg)
             .arg(cmd_with_redirect)
             .spawn()
             .map_err(|e| ToolError::ExecutionError(e.to_string()))?;
@@ -417,12 +531,15 @@ impl DeveloperRouter {
         path: &PathBuf,
         file_text: &str,
     ) -> Result<Vec<Content>, ToolError> {
+        // Normalize line endings based on platform
+        let normalized_text = normalize_line_endings(file_text);
+
         // Write to the file
-        std::fs::write(path, file_text)
+        std::fs::write(path, normalized_text)
             .map_err(|e| ToolError::ExecutionError(format!("Failed to write file: {}", e)))?;
 
         // Try to detect the language from the file extension
-        let language = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
+        let language = lang::get_language_identifier(path);
 
         // The assistant output does not show the file again because the content is already in the tool request
         // but we do show it to the user here
@@ -478,13 +595,14 @@ impl DeveloperRouter {
         // Save history for undo
         self.save_file_history(path)?;
 
-        // Replace and write back
+        // Replace and write back with platform-specific line endings
         let new_content = content.replace(old_str, new_str);
-        std::fs::write(path, &new_content)
+        let normalized_content = normalize_line_endings(&new_content);
+        std::fs::write(path, &normalized_content)
             .map_err(|e| ToolError::ExecutionError(format!("Failed to write file: {}", e)))?;
 
         // Try to detect the language from the file extension
-        let language = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
+        let language = lang::get_language_identifier(path);
 
         // Show a snippet of the changed content with context
         const SNIPPET_LINES: usize = 4;
@@ -669,7 +787,10 @@ impl Router for DeveloperRouter {
     }
 
     fn capabilities(&self) -> ServerCapabilities {
-        CapabilitiesBuilder::new().with_tools(false).build()
+        CapabilitiesBuilder::new()
+            .with_tools(false)
+            .with_prompts(false)
+            .build()
     }
 
     fn list_tools(&self) -> Vec<Tool> {
@@ -705,14 +826,58 @@ impl Router for DeveloperRouter {
     ) -> Pin<Box<dyn Future<Output = Result<String, ResourceError>> + Send + 'static>> {
         Box::pin(async move { Ok("".to_string()) })
     }
+
+    fn list_prompts(&self) -> Option<Vec<Prompt>> {
+        if self.prompts.is_empty() {
+            None
+        } else {
+            Some(self.prompts.values().cloned().collect())
+        }
+    }
+
+    fn get_prompt(
+        &self,
+        prompt_name: &str,
+    ) -> Option<Pin<Box<dyn Future<Output = Result<String, PromptError>> + Send + 'static>>> {
+        let prompt_name = prompt_name.trim().to_owned();
+
+        // Validate prompt name is not empty
+        if prompt_name.is_empty() {
+            return Some(Box::pin(async move {
+                Err(PromptError::InvalidParameters(
+                    "Prompt name cannot be empty".to_string(),
+                ))
+            }));
+        }
+
+        let prompts = Arc::clone(&self.prompts);
+
+        Some(Box::pin(async move {
+            match prompts.get(&prompt_name) {
+                Some(prompt) => {
+                    if prompt.description.trim().is_empty() {
+                        Err(PromptError::InternalError(format!(
+                            "Prompt '{prompt_name}' has an empty description"
+                        )))
+                    } else {
+                        Ok(prompt.description.clone())
+                    }
+                }
+                None => Err(PromptError::NotFound(format!(
+                    "Prompt '{prompt_name}' not found"
+                ))),
+            }
+        }))
+    }
 }
 
 impl Clone for DeveloperRouter {
     fn clone(&self) -> Self {
         Self {
             tools: self.tools.clone(),
-            file_history: Arc::clone(&self.file_history),
+            prompts: Arc::clone(&self.prompts),
             instructions: self.instructions.clone(),
+            file_history: Arc::clone(&self.file_history),
         }
     }
 }
@@ -807,6 +972,32 @@ mod tests {
         assert!(matches!(err, ToolError::InvalidParameters(_)));
 
         temp_dir.close().unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    #[cfg(windows)]
+    async fn test_windows_specific_commands() {
+        let router = get_router().await;
+
+        // Test PowerShell command
+        let result = router
+            .call_tool(
+                "shell",
+                json!({
+                    "command": "Get-ChildItem"
+                }),
+            )
+            .await;
+        assert!(result.is_ok());
+
+        // Test Windows path handling
+        let result = router.resolve_path("C:\\Windows\\System32");
+        assert!(result.is_ok());
+
+        // Test UNC path handling
+        let result = router.resolve_path("\\\\server\\share");
+        assert!(result.is_ok());
     }
 
     #[tokio::test]

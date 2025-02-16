@@ -62,8 +62,25 @@ pub async fn handle_configure() -> Result<(), Box<dyn Error>> {
                         );
                     }
                     Some(ConfigError::KeyringError(msg)) => {
+                        #[cfg(target_os = "macos")]
                         println!(
                             "\n  {} Failed to access secure storage (keyring): {} \n  Please check your system keychain and run '{}' again. \n  If your system is unable to use the keyring, please try setting secret key(s) via environment variables.",
+                            style("Error").red().italic(),
+                            msg,
+                            style("goose configure").cyan()
+                        );
+
+                        #[cfg(target_os = "windows")]
+                        println!(
+                            "\n  {} Failed to access Windows Credential Manager: {} \n  Please check Windows Credential Manager and run '{}' again. \n  If your system is unable to use the Credential Manager, please try setting secret key(s) via environment variables.",
+                            style("Error").red().italic(),
+                            msg,
+                            style("goose configure").cyan()
+                        );
+
+                        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+                        println!(
+                            "\n  {} Failed to access secure storage: {} \n  Please check your system's secure storage and run '{}' again. \n  If your system is unable to use secure storage, please try setting secret key(s) via environment variables.",
                             style("Error").red().italic(),
                             msg,
                             style("goose configure").cyan()
@@ -126,17 +143,25 @@ pub async fn handle_configure() -> Result<(), Box<dyn Error>> {
                 "Configure Providers",
                 "Change provider or update credentials",
             )
+            .item("add", "Add Extension", "Connect to a new extension")
             .item(
                 "toggle",
                 "Toggle Extensions",
                 "Enable or disable connected extensions",
             )
-            .item("add", "Add Extension", "Connect to a new extension")
+            .item("remove", "Remove Extension", "Remove an extension")
+            .item(
+                "tool_output",
+                "Adjust Tool Output",
+                "Show more or less tool output",
+            )
             .interact()?;
 
         match action {
             "toggle" => toggle_extensions_dialog(),
             "add" => configure_extensions_dialog(),
+            "remove" => remove_extension_dialog(),
+            "tool_output" => configure_tool_output_dialog(),
             "providers" => configure_provider_dialog().await.and(Ok(())),
             _ => unreachable!(),
         }
@@ -266,10 +291,6 @@ pub async fn configure_provider_dialog() -> Result<bool, Box<dyn Error>> {
         .default_input(&default_model)
         .interact()?;
 
-    // Update config with new values
-    config.set("GOOSE_PROVIDER", Value::String(provider_name.to_string()))?;
-    config.set("GOOSE_MODEL", Value::String(model.clone()))?;
-
     // Test the configuration
     let spin = spinner();
     spin.start("Checking your configuration...");
@@ -302,6 +323,9 @@ pub async fn configure_provider_dialog() -> Result<bool, Box<dyn Error>> {
 
     match result {
         Ok((_message, _usage)) => {
+            // Update config with new values only if the test succeeds
+            config.set("GOOSE_PROVIDER", Value::String(provider_name.to_string()))?;
+            config.set("GOOSE_MODEL", Value::String(model.clone()))?;
             cliclack::outro("Configuration saved successfully")?;
             Ok(true)
         }
@@ -403,6 +427,11 @@ pub fn configure_extensions_dialog() -> Result<(), Box<dyn Error>> {
                     "memory",
                     "Memory",
                     "Tools to save and retrieve durable memories",
+                )
+                .item(
+                    "tutorial",
+                    "Tutorial",
+                    "Access interactive tutorials and guides",
                 )
                 .item("jetbrains", "JetBrains", "Connect to jetbrains IDEs")
                 .interact()?
@@ -542,6 +571,76 @@ pub fn configure_extensions_dialog() -> Result<(), Box<dyn Error>> {
             })?;
 
             cliclack::outro(format!("Added {} extension", style(name).green()))?;
+        }
+        _ => unreachable!(),
+    };
+
+    Ok(())
+}
+
+pub fn remove_extension_dialog() -> Result<(), Box<dyn Error>> {
+    let extensions = ExtensionManager::get_all()?;
+
+    // Create a list of extension names and their enabled status
+    let extension_status: Vec<(String, bool)> = extensions
+        .iter()
+        .map(|entry| (entry.config.name().to_string(), entry.enabled))
+        .collect();
+
+    if extensions.is_empty() {
+        cliclack::outro(
+            "No extensions configured yet. Run configure and add some extensions first.",
+        )?;
+        return Ok(());
+    }
+
+    // Check if all extensions are enabled
+    if extension_status.iter().all(|(_, enabled)| *enabled) {
+        cliclack::outro(
+            "All extensions are currently enabled. You must first disable extensions before removing them.",
+        )?;
+        return Ok(());
+    }
+
+    let selected = cliclack::multiselect("Select extensions to remove (note: you can only remove disabled extensions - use \"space\" to toggle and \"enter\" to submit)")
+        .required(false)
+        .items(
+            &extension_status
+                .iter()
+                .filter(|(_, enabled)| !enabled)
+                .map(|(name, _)| (name, name.as_str(), ""))
+                .collect::<Vec<_>>(),
+        )
+        .interact()?;
+
+    for name in selected {
+        ExtensionManager::remove(name)?;
+        cliclack::outro(format!("Removed {} extension", style(name).green()))?;
+    }
+
+    Ok(())
+}
+
+pub fn configure_tool_output_dialog() -> Result<(), Box<dyn Error>> {
+    let config = Config::global();
+    let tool_log_level = cliclack::select("Which tool output would you like to show?")
+        .item("high", "High Importance", "")
+        .item("medium", "Medium Importance", "Ex. results of file-writes")
+        .item("all", "All", "Ex. shell command output")
+        .interact()?;
+
+    match tool_log_level {
+        "high" => {
+            config.set("GOOSE_CLI_MIN_PRIORITY", Value::from(0.8))?;
+            cliclack::outro("Showing tool output of high importance only.")?;
+        }
+        "med" => {
+            config.set("GOOSE_CLI_MIN_PRIORITY", Value::from(0.2))?;
+            cliclack::outro("Showing tool output of medium importance.")?;
+        }
+        "all" => {
+            config.set("GOOSE_CLI_MIN_PRIORITY", Value::from(0.0))?;
+            cliclack::outro("Showing all tool output.")?;
         }
         _ => unreachable!(),
     };
