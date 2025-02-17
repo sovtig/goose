@@ -3,7 +3,6 @@ import { Download, Terminal } from "lucide-react";
 import { Button } from "@site/src/components/ui/button";
 import { Badge } from "@site/src/components/ui/badge";
 import { getGooseInstallLink } from "@site/src/utils/install-links";
-import BrowserOnly from '@docusaurus/BrowserOnly';
 import { useLocation } from '@docusaurus/router';
 import { useEffect, useState } from "react";
 import type { MCPServer } from "@site/src/types/server";
@@ -95,8 +94,6 @@ export default function DetailPage(): JSX.Element {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  console.log('Current location:', location);  // Add this debug line
-
   useEffect(() => {
     const loadServer = async () => {
       try {
@@ -141,7 +138,7 @@ export default function DetailPage(): JSX.Element {
     return (
       <Layout>
         <div className="container mx-auto px-4">
-          <div className="py-8 text-red-500">{error || "Server not found"}</div>
+          <div className="py-8 text-red-500">{error || "Extension not found"}</div>
         </div>
       </Layout>
     );
