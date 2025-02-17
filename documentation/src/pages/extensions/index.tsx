@@ -51,9 +51,9 @@ export default function HomePage() {
           <p>Your central directory for discovering and installing extensions.</p>
         </div>
 
-        <div className="relative">
-          <Input
-            className="pl-0"
+        <div className="search-container">
+          <input
+            className="search-input"
             placeholder="Search for extensions"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -84,7 +84,7 @@ export default function HomePage() {
                 : "No servers available."}
             </div>
           ) : (
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            <div className="cards-grid">
               {servers
                 .sort((a, b) => {
                   // Sort built-in servers first

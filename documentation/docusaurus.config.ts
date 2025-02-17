@@ -60,6 +60,7 @@ const config: Config = {
           customCss: [
             "./src/css/custom.css",
             "./src/css/extensions.css",
+            "./src/css/tailwind.css",
           ],
         },
       } satisfies Preset.Options,
