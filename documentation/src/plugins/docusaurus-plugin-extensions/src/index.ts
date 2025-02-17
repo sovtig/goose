@@ -1,17 +1,18 @@
 import type { LoadContext, Plugin } from '@docusaurus/types';
 import type { PluginOptions } from './types';
-import { fetchMCPServers } from '@site/src/utils/mcp-servers';
+import type { MCPServer } from '../../../types/server';
+import { fetchMCPServers } from '../../../utils/mcp-servers';
 import path from 'path';
 import fs from 'fs';
 
 export default function pluginExtensions(
   context: LoadContext,
   options: PluginOptions,
-): Plugin<void> {
+): Plugin<MCPServer[]> {
   return {
     name: 'docusaurus-plugin-extensions',
 
-    async loadContent() {
+    async loadContent(): Promise<MCPServer[]> {
       // Fetch all extensions data
       const extensions = await fetchMCPServers();
       return extensions;
@@ -19,11 +20,11 @@ export default function pluginExtensions(
 
     async contentLoaded({ content, actions }) {
       const { createData, addRoute } = actions;
-      const extensions = content;
+      const extensions: MCPServer[] = content;
 
       // Create individual data files for each extension
       await Promise.all(
-        extensions.map(async (extension) => {
+        extensions.map(async (extension: MCPServer) => {
           const dataPath = await createData(
             `extension-${extension.id}.json`,
             JSON.stringify(extension),
@@ -42,17 +43,6 @@ export default function pluginExtensions(
       );
     },
 
-    // Register the @extensions alias
-    configureWebpack() {
-      return {
-        resolve: {
-          alias: {
-            '@extensions': path.resolve(__dirname, './extensions'),
-          },
-        },
-      };
-    },
-
     // This ensures our routes are generated during build time
     async postBuild({ outDir }) {
       const extensions = await fetchMCPServers();
@@ -64,7 +54,7 @@ export default function pluginExtensions(
       }
 
       // Write extension data as static JSON files
-      extensions.forEach((extension) => {
+      extensions.forEach((extension: MCPServer) => {
         fs.writeFileSync(
           path.join(extensionsDir, `${extension.id}.json`),
           JSON.stringify(extension),
