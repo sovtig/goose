@@ -107,7 +107,7 @@ const config: Config = {
       },
     ],
     [
-      require.resolve('./src/plugins/docusaurus-plugin-extensions'),
+      require.resolve('./src/plugins/docusaurus-plugin-extensions/lib/index.js'),
       {} // plugin options
     ],
   ],

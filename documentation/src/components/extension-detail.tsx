@@ -1,15 +1,17 @@
 import React from 'react';
 import Layout from '@theme/Layout';
-import { Extension } from '@site/src/plugins/docusaurus-plugin-extensions/src/types';
+import { MCPServer } from '@site/src/types/server';
 import { Info, Star, Download } from 'lucide-react';
 import { Badge } from '@site/src/components/ui/badge';
 import { getGooseInstallLink } from '@site/src/utils/install-links';
 
 interface Props {
-  extension: Extension;
+  readonly extension: MCPServer;
 }
 
-export default function ExtensionDetail({ extension }: Props): JSX.Element {
+export default function ExtensionDetail(props: Props): JSX.Element {
+  const { extension } = props;
+  
   if (!extension) {
     return (
       <Layout title="Extension Not Found">

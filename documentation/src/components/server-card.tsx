@@ -17,7 +17,7 @@ export function ServerCard({ server }: { server: MCPServer }) {
         <div className="card-header">
           <div className="card-header-content">
             <Link
-              to={`/extensions/detail/${server.id}.html`}
+              to={`/extensions/_detail?id=${server.id}`}
               className="extension-title"
             >
               <svg
@@ -55,9 +55,9 @@ export function ServerCard({ server }: { server: MCPServer }) {
 
             <div className="py-4">
               {server.is_builtin ? (
-                <div className="flex items-center gap-2 text-sm text-textStandard">
-                  <Info className="h-4 w-4" />
-                  Can be enabled in the goose settings page
+                <div className="flex items-center gap-2">
+                  <Info style={{ width: '12px', height: '12px' }} className="text-textSubtle shrink-0" />
+                  <span style={{ fontSize: '12px' }} className="text-textSubtle leading-normal">Can be enabled in the goose settings page</span>
                 </div>
               ) : (
                 <>

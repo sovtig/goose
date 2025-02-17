@@ -101,17 +101,21 @@ export default function DetailPage(): JSX.Element {
         setLoading(true);
         setError(null);
         const servers = await fetchMCPServers();
-        // Extract the ID from the URL path
-        const pathParts = location.pathname.split('/');
-        const id = pathParts[pathParts.length - 1];
+        // Get the ID from the query parameter
+        const params = new URLSearchParams(location.search);
+        const id = params.get('id');
+        if (!id) {
+          setError("No extension ID provided");
+          return;
+        }
         const foundServer = servers.find((s) => s.id === id);
         if (foundServer) {
           setServer(foundServer);
         } else {
-          setError("Server not found");
+          setError("Extension not found");
         }
       } catch (err) {
-        setError("Failed to load server details");
+        setError("Failed to load extension details");
         console.error(err);
       } finally {
         setLoading(false);
