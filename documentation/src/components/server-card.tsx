@@ -17,7 +17,7 @@ export function ServerCard({ server }: { server: MCPServer }) {
         <div className="card-header">
           <div className="card-header-content">
             <Link
-              to={`/extensions/_detail?id=${server.id}`}
+              to={`/extensions/detail?id=${server.id}`}
               className="extension-title"
             >
               <svg

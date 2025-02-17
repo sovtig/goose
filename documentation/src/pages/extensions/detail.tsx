@@ -95,6 +95,8 @@ export default function DetailPage(): JSX.Element {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  console.log('Current location:', location);  // Add this debug line
+
   useEffect(() => {
     const loadServer = async () => {
       try {
