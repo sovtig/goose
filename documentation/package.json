@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "docusaurus": "docusaurus",
+    "prestart": "cd src/plugins/docusaurus-plugin-extensions && npm install && npm run build",
     "start": "docusaurus start",
+    "prebuild": "cd src/plugins/docusaurus-plugin-extensions && npm install && npm run build",
     "build": "docusaurus build",
     "swizzle": "docusaurus swizzle",
     "deploy": "docusaurus deploy",

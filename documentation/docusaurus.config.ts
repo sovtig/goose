@@ -106,6 +106,10 @@ const config: Config = {
         ],
       },
     ],
+    [
+      require.resolve('./src/plugins/docusaurus-plugin-extensions'),
+      {} // plugin options
+    ],
   ],
   themes: ["@inkeep/docusaurus/chatButton", "@inkeep/docusaurus/searchBar"],
   themeConfig: {
