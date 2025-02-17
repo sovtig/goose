@@ -1,5 +1,5 @@
 import Layout from "@theme/Layout";
-import { Download, Terminal } from "lucide-react";
+import { Download, Terminal, Star, ArrowLeft, Info } from "lucide-react";
 import { Button } from "@site/src/components/ui/button";
 import { Badge } from "@site/src/components/ui/badge";
 import { getGooseInstallLink } from "@site/src/utils/install-links";
@@ -7,79 +7,135 @@ import { useLocation } from '@docusaurus/router';
 import { useEffect, useState } from "react";
 import type { MCPServer } from "@site/src/types/server";
 import { fetchMCPServers } from "@site/src/utils/mcp-servers";
+import Link from '@docusaurus/Link';
 
 function ExtensionDetail({ server }: { server: MCPServer }) {
   return (
     <Layout>
-      <div className="container mx-auto px-4 py-8">
-        <div className="flex items-center gap-4">
-          <h1 className="text-4xl font-medium">{server.name}</h1>
-          {server.is_builtin && (
-            <Badge variant="secondary" className="text-sm">
-              Built-in
-            </Badge>
-          )}
-        </div>
-
-        <p className="text-lg mt-4 text-gray-600">{server.description}</p>
-
-        {!server.is_builtin && (
-          <div className="mt-8">
-            <div className="flex items-center gap-2 mb-2">
-              <Terminal className="h-5 w-5" />
-              <h2 className="text-xl font-medium">Installation</h2>
-            </div>
-            <div className="bg-gray-100 dark:bg-gray-900 p-4 rounded-lg">
-              <code className="text-lg">
-                {`goose session --with-extension "${server.command}"`}
-              </code>
-            </div>
-            <div className="mt-4">
-              <a
-                href={getGooseInstallLink(server)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="no-underline"
+      <div className="container mx-auto">
+        <div className="flex gap-8 max-w-5xl mx-auto py-8">
+          <div>
+            <Link to="/extensions" className="no-underline">
+              <Button
+                variant="ghost"
+                className="flex items-center gap-2 text-textStandard hover:text-textProminent"
               >
-                <Button className="group flex items-center gap-2">
-                  Install with Goose
-                  <Download className="h-4 w-4 group-hover:text-[#FA5204]" />
-                </Button>
-              </a>
-            </div>
+                <ArrowLeft className="h-4 w-4" />
+                Back
+              </Button>
+            </Link>
           </div>
-        )}
 
-        {server.is_builtin && (
-          <div className="mt-8">
-            <div className="flex items-center gap-2 mb-2">
-              <Terminal className="h-5 w-5" />
-              <h2 className="text-xl font-medium">Built-in Extension</h2>
+          <div className="bg-bgApp rounded-2xl border border-borderSubtle p-8 w-full">
+            <div className="flex items-center mb-6">
+              <div className="flex items-center gap-4">
+                <h1 className="font-medium text-5xl text-textProminent m-0">
+                  {server.name}
+                </h1>
+                {server.is_builtin && (
+                  <Badge variant="secondary" className="text-sm">
+                    Built-in
+                  </Badge>
+                )}
+              </div>
             </div>
-            <p className="text-gray-600">
-              This extension is built into goose and can be enabled in the settings
-              page.
-            </p>
-          </div>
-        )}
 
-        <div className="mt-8">
-          <h2 className="text-xl font-medium mb-4">Additional Information</h2>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-lg">
-              <h3 className="font-medium mb-2">Repository</h3>
-              <a
-                href={server.link}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-500 hover:text-blue-600"
-              >
-                View on GitHub
-              </a>
-            </div>
-            <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-lg">
-              <h3 className="font-medium mb-2">GitHub Stars</h3>
-              <p>{server.githubStars}</p>
+            <div className="space-y-8">
+              <div>
+                <p className="text-xl text-textSubtle m-0">{server.description}</p>
+              </div>
+
+              {server.installation_notes && (
+                <div>
+                  <p className="text-md text-textSubtle m-0">{server.installation_notes}</p>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                {server.is_builtin ? (
+                  <div className="flex items-center gap-2">
+                    <Info style={{ width: '12px', height: '12px' }} className="text-textSubtle shrink-0" />
+                    <span style={{ fontSize: '12px' }} className="text-textSubtle leading-normal">
+                      Can be enabled in the goose settings page
+                    </span>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2 text-textStandard">
+                      <Terminal className="h-4 w-4" />
+                      <h4 className="font-medium m-0">Command</h4>
+                    </div>
+                    <div className="bg-bgSubtle dark:bg-gray-900 p-4 rounded-lg">
+                      <code className="text-sm text-textStandard">
+                        {`goose session --with-extension "${server.command}"`}
+                      </code>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {server.environmentVariables && server.environmentVariables.length > 0 && (
+                <div className="space-y-4">
+                  <h2 className="text-lg font-medium text-textStandard m-0">Environment Variables</h2>
+                  <div>
+                    {server.environmentVariables.map((env) => (
+                      <div
+                        key={env.name}
+                        className="border-b border-borderSubtle pb-4 mb-4 last:border-0"
+                      >
+                        <div className="text-sm text-textStandard">{env.name}</div>
+                        <div className="text-textSubtle text-sm mt-1">
+                          {env.description}
+                        </div>
+                        {env.required && (
+                          <Badge variant="secondary" className="mt-2">
+                            Required
+                          </Badge>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between pt-4">
+                <a
+                  href={server.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-textSubtle text-sm hover:text-textProminent transition-colors no-underline"
+                >
+                  <Star className="h-4 w-4" />
+                  <span>{server.githubStars} on Github</span>
+                </a>
+
+                {server.is_builtin ? (
+                  <div
+                    className="inline-block"
+                    title="This extension is built into goose and can be enabled in the settings page"
+                  >
+                    <Badge variant="secondary" className="text-xs cursor-help">
+                      Built-in
+                    </Badge>
+                  </div>
+                ) : (
+                  <a
+                    href={getGooseInstallLink(server)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="no-underline"
+                  >
+                    <Button
+                      variant="link"
+                      className="group flex items-center justify-center text-xs leading-[14px] text-textSubtle hover:text-textProminent px-0 transition-all"
+                      title="Install with Goose"
+                    >
+                      <span>Install</span>
+                      <Download className="h-4 w-4 ml-2 group-hover:text-[#FA5204]" />
+                    </Button>
+                  </a>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -127,8 +183,25 @@ export default function DetailPage(): JSX.Element {
   if (loading) {
     return (
       <Layout>
-        <div className="container mx-auto px-4">
-          <div className="py-8">Loading...</div>
+        <div className="container mx-auto">
+          <div className="flex gap-8 max-w-5xl mx-auto py-8">
+            <div>
+              <Link to="/extensions" className="no-underline">
+                <Button
+                  variant="ghost"
+                  className="flex items-center gap-2 text-textStandard hover:text-textProminent"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Back
+                </Button>
+              </Link>
+            </div>
+            <div className="animate-pulse w-full">
+              <div className="h-12 w-48 bg-bgSubtle rounded-lg mb-4"></div>
+              <div className="h-6 w-full bg-bgSubtle rounded-lg mb-2"></div>
+              <div className="h-6 w-2/3 bg-bgSubtle rounded-lg"></div>
+            </div>
+          </div>
         </div>
       </Layout>
     );
@@ -137,8 +210,23 @@ export default function DetailPage(): JSX.Element {
   if (error || !server) {
     return (
       <Layout>
-        <div className="container mx-auto px-4">
-          <div className="py-8 text-red-500">{error || "Extension not found"}</div>
+        <div className="container mx-auto">
+          <div className="flex gap-8 max-w-5xl mx-auto py-8">
+            <div>
+              <Link to="/extensions" className="no-underline">
+                <Button
+                  variant="ghost"
+                  className="flex items-center gap-2 text-textStandard hover:text-textProminent"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Back
+                </Button>
+              </Link>
+            </div>
+            <div className="bg-bgApp rounded-2xl border border-borderSubtle p-8 w-full">
+              <div className="text-red-500">{error || "Extension not found"}</div>
+            </div>
+          </div>
         </div>
       </Layout>
     );
