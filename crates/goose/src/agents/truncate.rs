@@ -3,6 +3,7 @@
 use async_trait::async_trait;
 use futures::stream::BoxStream;
 use tokio::sync::Mutex;
+use tokio::sync::mpsc;
 use tracing::{debug, error, instrument, warn};
 
 use super::Agent;
@@ -16,7 +17,7 @@ use crate::register_agent;
 use crate::token_counter::TokenCounter;
 use crate::truncate::{truncate_messages, OldestFirstTruncation};
 use indoc::indoc;
-use mcp_core::tool::Tool;
+use mcp_core::{tool::Tool, Content};
 use serde_json::{json, Value};
 
 const MAX_TRUNCATION_ATTEMPTS: usize = 3;
@@ -26,14 +27,21 @@ const ESTIMATE_FACTOR_DECAY: f32 = 0.9;
 pub struct TruncateAgent {
     capabilities: Mutex<Capabilities>,
     token_counter: TokenCounter,
+    confirmation_tx: mpsc::Sender<(String, bool)>,  // (request_id, confirmed)
+    confirmation_rx: Mutex<mpsc::Receiver<(String, bool)>>,
 }
 
 impl TruncateAgent {
     pub fn new(provider: Box<dyn Provider>) -> Self {
         let token_counter = TokenCounter::new(provider.get_model_config().tokenizer_name());
+        // Create channel with buffer size 32 (adjust if needed)
+        let (tx, rx) = mpsc::channel(32);
+        
         Self {
             capabilities: Mutex::new(Capabilities::new(provider)),
             token_counter,
+            confirmation_tx: tx,
+            confirmation_rx: Mutex::new(rx),
         }
     }
 
@@ -121,6 +129,13 @@ impl Agent for TruncateAgent {
         Ok(Value::Null)
     }
 
+    /// Handle a confirmation response for a tool request
+    async fn handle_confirmation(&self, request_id: String, confirmed: bool) {
+        if let Err(e) = self.confirmation_tx.send((request_id, confirmed)).await {
+            error!("Failed to send confirmation: {}", e);
+        }
+    }
+
     #[instrument(skip(self, messages), fields(user_message))]
     async fn reply(
         &self,
@@ -187,13 +202,13 @@ impl Agent for TruncateAgent {
         {
             debug!("user_message" = &content);
         }
-        println!("truncate.rs reply: user messages: {:?}", messages);
+        // println!("truncate.rs reply: user messages: {:?}", messages);
 
         Ok(Box::pin(async_stream::try_stream! {
             let _reply_guard = reply_span.enter();
             loop {
-                println!("LOOP");
-                println!("LOOP MESSAGES: {:?}", messages);
+                // println!("LOOP");
+                // println!("LOOP MESSAGES: {:?}", messages);
                 // Attempt to get completion from provider
                 match capabilities.provider().complete(
                     &system_prompt,
@@ -222,41 +237,39 @@ impl Agent for TruncateAgent {
                         }
 
                         // Process each tool request sequentially, asking for confirmation
+                        let mut message_tool_response = Message::user();
                         for request in &tool_requests {
-                            println!("truncate.rs reply request: {:?}", request);
+                            // println!("truncate.rs reply request: {:?}", request);
                             if let Ok(tool_call) = request.tool_call.clone() {
                                 let confirmation = Message::user().with_tool_confirmation_request(
                                     request.id.clone(),
                                     tool_call.name.clone(),
                                     tool_call.arguments.clone(),
                                 );
-                                println!("truncate.rs reply confirmation: {:?}", confirmation);
+                                // println!("truncate.rs reply confirmation: {:?}", confirmation);
                                 yield confirmation;
+
+                                // Wait for confirmation response through the channel
+                                let mut rx = self.confirmation_rx.lock().await;
+                                if let Some((req_id, confirmed)) = rx.recv().await {
+                                    if req_id == request.id {
+                                        if confirmed {
+                                            // User approved - dispatch the tool call
+                                            let output = capabilities.dispatch_tool_call(tool_call).await;
+                                            message_tool_response = message_tool_response.with_tool_response(
+                                                request.id.clone(),
+                                                output,
+                                            );
+                                        } else {
+                                            // User declined - add declined response
+                                            message_tool_response = message_tool_response.with_tool_response(
+                                                request.id.clone(),
+                                                Ok(vec![Content::text("User declined to run this tool.")]),
+                                            );
+                                        }
+                                    }
+                                }
                             }
-                        }
-                        let confirm_tool_calls = Message::assistant().with_text("Dispatching tool calls...");
-                        yield confirm_tool_calls;
-
-                        // TODO: get confirmation from user via channel about which tools to dispatch
-
-                        // Then dispatch each in parallel
-                        let futures: Vec<_> = tool_requests
-                            .iter()
-                            .filter_map(|request| request.tool_call.clone().ok())
-                            .map(|tool_call| capabilities.dispatch_tool_call(tool_call))
-                            .collect();
-
-                        // Process all the futures in parallel but wait until all are finished
-                        let outputs = futures::future::join_all(futures).await;
-
-                        // Create a message with the responses
-                        let mut message_tool_response = Message::user();
-                        // Now combine these into MessageContent::ToolResponse using the original ID
-                        for (request, output) in tool_requests.iter().zip(outputs.into_iter()) {
-                            message_tool_response = message_tool_response.with_tool_response(
-                                request.id.clone(),
-                                output,
-                            );
                         }
 
                         yield message_tool_response.clone();

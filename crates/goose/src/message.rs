@@ -31,7 +31,6 @@ pub struct ToolConfirmationRequest {
     pub id: String,
     pub tool_name: String,
     pub arguments: Value,
-    pub request_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -74,12 +73,11 @@ impl MessageContent {
         })
     }
 
-    pub fn tool_confirmation_request<S: Into<String>>(id: S, tool_name: String, arguments: Value, request_id: String) -> Self {
+    pub fn tool_confirmation_request<S: Into<String>>(id: S, tool_name: String, arguments: Value) -> Self {
         MessageContent::ToolConfirmationRequest(ToolConfirmationRequest {
             id: id.into(),
             tool_name,
             arguments,
-            request_id,
         })
     }
     pub fn as_tool_request(&self) -> Option<&ToolRequest> {
@@ -210,9 +208,8 @@ impl Message {
         id: S,
         tool_name: String,
         arguments: Value,
-        request_id: String,
     ) -> Self {
-        self.with_content(MessageContent::tool_confirmation_request(id, tool_name, arguments, request_id))
+        self.with_content(MessageContent::tool_confirmation_request(id, tool_name, arguments))
     }
 
     /// Get the concatenated text content of the message, separated by newlines

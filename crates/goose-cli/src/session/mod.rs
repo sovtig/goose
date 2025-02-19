@@ -188,7 +188,7 @@ impl Session {
     }
 
     async fn process_agent_response(&mut self, mut editor: &mut Editor<(), rustyline::history::DefaultHistory>) -> Result<()> {
-        println!("mod.rs process_agent_response: starting");
+        // println!("mod.rs process_agent_response: starting");
         let mut stream = self.agent.reply(&self.messages).await?;
 
         use futures::StreamExt;
@@ -218,17 +218,23 @@ impl Session {
                                     }
                                     _ => false,
                                 };
-                                let confirmation = Message::user().with_tool_confirmation_request(
+                                let confirmation_request = Message::user().with_tool_confirmation_request(
                                     confirmation.id.clone(),
                                     confirmation.tool_name.clone(), 
                                     confirmation.arguments.clone(),
                                 );
-                                println!("mod.rs process_agent_response: CONFIRMATION : {}", confirmed);
-                                message = confirmation;
-                            }
-                            self.messages.push(message.clone());
+                                // println!("mod.rs process_agent_response: CONFIRMATION : {}", confirmed);
 
-                            println!("mod.rs process_agent_response: this is the message: {:?}", message);
+                                self.agent.handle_confirmation(confirmation.id.clone(), confirmed).await;
+
+                                message = confirmation_request;
+                            }
+                            // Only push the message if it's not a tool confirmation request
+                            if !message.content.iter().any(|content| matches!(content, MessageContent::ToolConfirmationRequest(_))) {
+                                self.messages.push(message.clone());
+                            }
+
+                            // println!("mod.rs process_agent_response: this is the message: {:?}", message);
                             storage::persist_messages(&self.session_file, &self.messages)?;
                             output::hide_thinking();
                             output::render_message(&message);

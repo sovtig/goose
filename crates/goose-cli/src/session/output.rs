@@ -93,7 +93,7 @@ pub fn render_message(message: &Message) {
             MessageContent::Text(text) => print_markdown(&text.text, theme),
             MessageContent::ToolRequest(req) => render_tool_request(req, theme),
             MessageContent::ToolResponse(resp) => render_tool_response(resp, theme),
-            MessageContent::ToolConfirmationRequest(req) => print_markdown(&format!("output.rs render_message: proceed calling tool: {}?", req.tool_name), theme),
+            MessageContent::ToolConfirmationRequest(req) => print_markdown(&format!("{}", req.arguments), theme),
             MessageContent::Image(image) => {
                 println!("Image: [data: {}, type: {}]", image.data, image.mime_type);
             }

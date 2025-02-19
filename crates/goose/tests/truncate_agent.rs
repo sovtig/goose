@@ -138,7 +138,7 @@ async fn run_truncate_test(
         }
     }
 
-    println!("Responses: {responses:?}\n");
+    // println!("Responses: {responses:?}\n");
     assert_eq!(responses.len(), 1);
 
     // Ollama and OpenRouter truncate by default even when the context window is exceeded
