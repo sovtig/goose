@@ -70,7 +70,7 @@ impl OpenAiProvider {
             .post(url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .json(&payload)
-            .send()t
+            .send()
             .await?;
 
         handle_response_openai_compat(response).await
