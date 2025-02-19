@@ -202,14 +202,10 @@ impl Agent for TruncateAgent {
         {
             debug!("user_message" = &content);
         }
-        // println!("truncate.rs reply: user messages: {:?}", messages);
 
         Ok(Box::pin(async_stream::try_stream! {
             let _reply_guard = reply_span.enter();
             loop {
-                // println!("LOOP");
-                // println!("LOOP MESSAGES: {:?}", messages);
-                // Attempt to get completion from provider
                 match capabilities.provider().complete(
                     &system_prompt,
                     &messages,
@@ -239,14 +235,12 @@ impl Agent for TruncateAgent {
                         // Process each tool request sequentially, asking for confirmation
                         let mut message_tool_response = Message::user();
                         for request in &tool_requests {
-                            // println!("truncate.rs reply request: {:?}", request);
                             if let Ok(tool_call) = request.tool_call.clone() {
                                 let confirmation = Message::user().with_tool_confirmation_request(
                                     request.id.clone(),
                                     tool_call.name.clone(),
                                     tool_call.arguments.clone(),
                                 );
-                                // println!("truncate.rs reply confirmation: {:?}", confirmation);
                                 yield confirmation;
 
                                 // Wait for confirmation response through the channel

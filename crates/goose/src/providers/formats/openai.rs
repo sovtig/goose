@@ -188,7 +188,6 @@ pub fn format_tools(tools: &[Tool]) -> anyhow::Result<Vec<Value>> {
 /// Convert OpenAI's API response to internal Message format
 pub fn response_to_message(response: Value) -> anyhow::Result<Message> {
     let original = response["choices"][0]["message"].clone();
-    // println!("openai.rs response_to_message: original: {:?}", original);
     let mut content = Vec::new();
 
     // Handle case where response has both content and tool calls

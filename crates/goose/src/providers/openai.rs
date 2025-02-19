@@ -65,16 +65,14 @@ impl OpenAiProvider {
             ProviderError::RequestFailed(format!("Failed to construct endpoint URL: {e}"))
         })?;
 
-        // println!("SENDING PAYLOAD: {:?}", payload);
         let response = self
             .client
             .post(url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .json(&payload)
-            .send()
+            .send()t
             .await?;
 
-        // println!("RESPONSE: {:?}", response);
         handle_response_openai_compat(response).await
     }
 }
@@ -115,10 +113,8 @@ impl Provider for OpenAiProvider {
     ) -> Result<(Message, ProviderUsage), ProviderError> {
         let payload = create_request(&self.model, system, messages, tools, &ImageFormat::OpenAi)?;
 
-        // println!("THIS IS THE PAYLOAD: {:?}", payload);
         // Make request
         let response = self.post(payload.clone()).await?;
-        // println!("RESPONSE: {:?}", response);
 
         // Parse response
         let message = response_to_message(response.clone())?;
