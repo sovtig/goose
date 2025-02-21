@@ -2,8 +2,8 @@
 /// It makes no attempt to handle context limits, and cannot read resources
 use async_trait::async_trait;
 use futures::stream::BoxStream;
-use tokio::sync::Mutex;
 use tokio::sync::mpsc;
+use tokio::sync::Mutex;
 use tracing::{debug, error, instrument, warn};
 
 use super::Agent;
@@ -27,7 +27,7 @@ const ESTIMATE_FACTOR_DECAY: f32 = 0.9;
 pub struct TruncateAgent {
     capabilities: Mutex<Capabilities>,
     token_counter: TokenCounter,
-    confirmation_tx: mpsc::Sender<(String, bool)>,  // (request_id, confirmed)
+    confirmation_tx: mpsc::Sender<(String, bool)>, // (request_id, confirmed)
     confirmation_rx: Mutex<mpsc::Receiver<(String, bool)>>,
 }
 
@@ -36,7 +36,7 @@ impl TruncateAgent {
         let token_counter = TokenCounter::new(provider.get_model_config().tokenizer_name());
         // Create channel with buffer size 32 (adjust if needed)
         let (tx, rx) = mpsc::channel(32);
-        
+
         Self {
             capabilities: Mutex::new(Capabilities::new(provider)),
             token_counter,
@@ -140,6 +140,7 @@ impl Agent for TruncateAgent {
     async fn reply(
         &self,
         messages: &[Message],
+        goose_mode: Option<String>,
     ) -> anyhow::Result<BoxStream<'_, anyhow::Result<Message>>> {
         let mut messages = messages.to_vec();
         let reply_span = tracing::Span::current();
@@ -234,35 +235,75 @@ impl Agent for TruncateAgent {
 
                         // Process each tool request sequentially, asking for confirmation
                         let mut message_tool_response = Message::user();
-                        for request in &tool_requests {
-                            if let Ok(tool_call) = request.tool_call.clone() {
-                                let confirmation = Message::user().with_tool_confirmation_request(
-                                    request.id.clone(),
-                                    tool_call.name.clone(),
-                                    tool_call.arguments.clone(),
-                                );
-                                yield confirmation;
-
-                                // Wait for confirmation response through the channel
-                                let mut rx = self.confirmation_rx.lock().await;
-                                if let Some((req_id, confirmed)) = rx.recv().await {
-                                    if req_id == request.id {
-                                        if confirmed {
-                                            // User approved - dispatch the tool call
+                        // Clone goose_mode once before the match to avoid move issues
+                        let mode = goose_mode.clone().unwrap_or_else(|| "auto".to_string());
+                        match mode.as_str() {
+                            "auto" => {
+                                // Process tool requests in parallel
+                                let mut tool_futures = Vec::new();
+                                for request in &tool_requests {
+                                    if let Ok(tool_call) = request.tool_call.clone() {
+                                        tool_futures.push(async {
                                             let output = capabilities.dispatch_tool_call(tool_call).await;
-                                            message_tool_response = message_tool_response.with_tool_response(
-                                                request.id.clone(),
-                                                output,
-                                            );
-                                        } else {
-                                            // User declined - add declined response
-                                            message_tool_response = message_tool_response.with_tool_response(
-                                                request.id.clone(),
-                                                Ok(vec![Content::text("User declined to run this tool.")]),
-                                            );
+                                            (request.id.clone(), output)
+                                        });
+                                    }
+                                }
+
+                                // Wait for all tool calls to complete
+                                let results = futures::future::join_all(tool_futures).await;
+                                for (request_id, output) in results {
+                                    message_tool_response = message_tool_response.with_tool_response(
+                                        request_id,
+                                        output,
+                                    );
+                                }
+                            },
+                            "approve" => {
+                                // Process each tool request sequentially with confirmation
+                                for request in &tool_requests {
+                                    if let Ok(tool_call) = request.tool_call.clone() {
+                                        let confirmation = Message::user().with_tool_confirmation_request(
+                                            request.id.clone(),
+                                            tool_call.name.clone(),
+                                            tool_call.arguments.clone(),
+                                        );
+                                        yield confirmation;
+
+                                        // Wait for confirmation response through the channel
+                                        let mut rx = self.confirmation_rx.lock().await;
+                                        if let Some((req_id, confirmed)) = rx.recv().await {
+                                            if req_id == request.id {
+                                                if confirmed {
+                                                    // User approved - dispatch the tool call
+                                                    let output = capabilities.dispatch_tool_call(tool_call).await;
+                                                    message_tool_response = message_tool_response.with_tool_response(
+                                                        request.id.clone(),
+                                                        output,
+                                                    );
+                                                } else {
+                                                    // User declined - add declined response
+                                                    message_tool_response = message_tool_response.with_tool_response(
+                                                        request.id.clone(),
+                                                        Ok(vec![Content::text("User declined to run this tool.")]),
+                                                    );
+                                                }
+                                            }
                                         }
                                     }
                                 }
+                            },
+                            "chat" => {
+                                // Skip all tool calls in chat mode
+                                for request in &tool_requests {
+                                    message_tool_response = message_tool_response.with_tool_response(
+                                        request.id.clone(),
+                                        Ok(vec![Content::text("Tool call skipped in Goose chat mode")]),
+                                    );
+                                }
+                            },
+                            _ => {
+                                warn!("Unknown goose_mode: {mode:?}. Defaulting to 'approve' mode.");
                             }
                         }
 

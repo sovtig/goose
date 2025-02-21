@@ -310,10 +310,10 @@ async fn handler(
             }
         };
 
-        let mut stream = match agent.reply(&messages).await {
+        let mut stream = match agent.reply(&messages, Some("auto".to_string())).await {
             Ok(stream) => stream,
             Err(e) => {
-                tracing::error!("Failed to start reply stream: {}", e);
+                tracing::error!("Failed to start reply stream: {:?}", e);
                 let _ = tx
                     .send(ProtocolFormatter::format_error(&e.to_string()))
                     .await;
@@ -397,10 +397,10 @@ async fn ask_handler(
 
     // Get response from agent
     let mut response_text = String::new();
-    let mut stream = match agent.reply(&messages).await {
+    let mut stream = match agent.reply(&messages, Some("auto".to_string())).await {
         Ok(stream) => stream,
         Err(e) => {
-            tracing::error!("Failed to start reply stream: {}", e);
+            tracing::error!("Failed to start reply stream: {:?}", e);
             return Err(StatusCode::INTERNAL_SERVER_ERROR);
         }
     };

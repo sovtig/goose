@@ -10,12 +10,13 @@ pub use builder::build_session;
 use anyhow::Result;
 use goose::agents::extension::{Envs, ExtensionConfig};
 use goose::agents::Agent;
+use goose::config::Config;
 use goose::message::{Message, MessageContent};
 use mcp_core::handler::ToolError;
 use rand::{distributions::Alphanumeric, Rng};
+use rustyline::Editor;
 use std::path::PathBuf;
 use tokio;
-use rustyline::Editor;
 
 use crate::log_usage::log_usage;
 
@@ -120,16 +121,18 @@ impl Session {
                 }
             }
         }
-
+        let config = Config::global();
         output::display_greeting();
         loop {
+            let goose_mode = config.get("GOOSE_MODE").unwrap_or("auto".to_string());
             match input::get_input(&mut editor)? {
                 input::InputResult::Message(content) => {
                     self.messages.push(Message::user().with_text(&content));
                     storage::persist_messages(&self.session_file, &self.messages)?;
 
                     output::show_thinking();
-                    self.process_agent_response(&mut editor).await?;
+                    self.process_agent_response(&mut editor, Some(goose_mode.clone()))
+                        .await?;
                     output::hide_thinking();
                 }
                 input::InputResult::Exit => break,
@@ -179,16 +182,25 @@ impl Session {
     }
 
     pub async fn headless_start(&mut self, initial_message: String) -> Result<()> {
+        // Load settings from config
+        let config = Config::global();
+        let goose_mode = config.get("GOOSE_MODE").unwrap_or("auto".to_string());
+
         self.messages
             .push(Message::user().with_text(&initial_message));
         storage::persist_messages(&self.session_file, &self.messages)?;
         let mut editor = Editor::<(), rustyline::history::DefaultHistory>::new()?;
-        self.process_agent_response(&mut editor).await?;
+        self.process_agent_response(&mut editor, Some(goose_mode.clone()))
+            .await?;
         Ok(())
     }
 
-    async fn process_agent_response(&mut self, mut editor: &mut Editor<(), rustyline::history::DefaultHistory>) -> Result<()> {
-        let mut stream = self.agent.reply(&self.messages).await?;
+    async fn process_agent_response(
+        &mut self,
+        mut editor: &mut Editor<(), rustyline::history::DefaultHistory>,
+        goose_mode: Option<String>,
+    ) -> Result<()> {
+        let mut stream = self.agent.reply(&self.messages, goose_mode).await?;
 
         use futures::StreamExt;
         loop {
@@ -218,7 +230,7 @@ impl Session {
                                 };
                                 let confirmation_request = Message::user().with_tool_confirmation_request(
                                     confirmation.id.clone(),
-                                    confirmation.tool_name.clone(), 
+                                    confirmation.tool_name.clone(),
                                     confirmation.arguments.clone(),
                                 );
 

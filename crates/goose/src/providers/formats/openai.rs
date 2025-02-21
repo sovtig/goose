@@ -137,10 +137,12 @@ pub fn format_messages(messages: &[Message], image_format: &ImageFormat) -> Vec<
                     }
                 }
                 MessageContent::ToolConfirmationRequest(tool_confirmation_request) => {
-                    converted["content"] = json!(format!("Do you want to run tool '{}' with id '{}' and input '{}'?", 
+                    converted["content"] = json!(format!(
+                        "Do you want to run tool '{}' with id '{}' and input '{}'?",
                         tool_confirmation_request.tool_name,
                         tool_confirmation_request.id,
-                        tool_confirmation_request.arguments));
+                        tool_confirmation_request.arguments
+                    ));
                 }
                 MessageContent::Image(image) => {
                     // Handle direct image content
@@ -189,15 +191,6 @@ pub fn format_tools(tools: &[Tool]) -> anyhow::Result<Vec<Value>> {
 pub fn response_to_message(response: Value) -> anyhow::Result<Message> {
     let original = response["choices"][0]["message"].clone();
     let mut content = Vec::new();
-
-    // Handle case where response has both content and tool calls
-    if original.get("content").is_some() && original.get("tool_calls").is_some() {
-        if let Some(text) = original.get("content") {
-            if let Some(text_str) = text.as_str() {
-                content.push(MessageContent::text(&format!("{} Would you like to proceed with the tool call?", text_str)));
-            }
-        }
-    }
 
     if let Some(text) = original.get("content") {
         if let Some(text_str) = text.as_str() {

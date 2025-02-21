@@ -73,7 +73,11 @@ impl MessageContent {
         })
     }
 
-    pub fn tool_confirmation_request<S: Into<String>>(id: S, tool_name: String, arguments: Value) -> Self {
+    pub fn tool_confirmation_request<S: Into<String>>(
+        id: S,
+        tool_name: String,
+        arguments: Value,
+    ) -> Self {
         MessageContent::ToolConfirmationRequest(ToolConfirmationRequest {
             id: id.into(),
             tool_name,
@@ -209,7 +213,9 @@ impl Message {
         tool_name: String,
         arguments: Value,
     ) -> Self {
-        self.with_content(MessageContent::tool_confirmation_request(id, tool_name, arguments))
+        self.with_content(MessageContent::tool_confirmation_request(
+            id, tool_name, arguments,
+        ))
     }
 
     /// Get the concatenated text content of the message, separated by newlines
