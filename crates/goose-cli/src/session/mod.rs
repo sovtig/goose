@@ -204,7 +204,7 @@ impl Session {
 
     async fn process_agent_response(
         &mut self,
-        mut editor: &mut Editor<(), rustyline::history::DefaultHistory>,
+        editor: &mut Editor<(), rustyline::history::DefaultHistory>,
         goose_mode: Option<String>,
     ) -> Result<()> {
         let mut stream = self.agent.reply(&self.messages, goose_mode).await?;
@@ -229,7 +229,7 @@ impl Session {
                                 output::render_message(&Message::assistant().with_text(&prompt));
 
                                 // Get confirmation from user
-                                let confirmed = match input::get_input(&mut editor)? {
+                                let confirmed = match input::get_input(editor)? {
                                     input::InputResult::Message(content) => {
                                         content.trim().to_lowercase().starts_with('y')
                                     }
