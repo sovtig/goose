@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Check, Plus, Settings, X, Rocket, RefreshCw, AlertCircle } from 'lucide-react';
+import { Check, Plus, Settings, X, Rocket } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../ui/Tooltip';
 import { Portal } from '@radix-ui/react-portal';
 import { required_keys } from '../models/hardcoded_stuff';
-import { ExclamationTriangleIcon } from '@radix-ui/react-icons';
 import { useActiveKeys } from '../api_keys/ActiveKeysContext';
 import { getActiveProviders } from '../api_keys/utils';
 
@@ -39,7 +38,7 @@ function getArticle(word: string): string {
 
 export function getProviderDescription(provider) {
   const descriptions = {
-    OpenAI: 'Access GPT-4, GPT-3.5 Turbo, and other OpenAI models',
+    OpenAI: 'Access GPT-4 and other OpenAI models, including OpenAI compatible ones',
     Anthropic: 'Access Claude and other Anthropic models',
     Google: 'Access Gemini and other Google AI models',
     Groq: 'Access Mixtral and other Groq-hosted models',

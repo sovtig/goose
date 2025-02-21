@@ -96,9 +96,10 @@ For detailed steps on updating your LLM provider, refer to the [Installation][in
 
 ---
 
-### Remove Cached Data
+### Uninstall Goose or Remove Cached Data
 
-Goose stores data in a few places. Secrets, such as API keys, are stored exclusively in the system keychain.
+You may need to uninstall Goose or clear existing data before re-installing. Goose stores data in a few places. Secrets, such as API keys, are stored exclusively in the system keychain.
+
 Logs and configuration data are stored in `~/.config/goose`. And the app stores a small amount of data in
 `~/Library/Application Support/Goose`.
 
@@ -108,7 +109,9 @@ You can remove all of this data by following these steps.
   * consider confirming you've stopped them all via the activity monitor
 * open the keychain and delete the credential called "goose", which contains all secrets stored by goose
 * `rm -rf ~/.config/goose`
-* For the App on macOS, `rm -rf ~/Library/Application Support/Goose`
+
+If you are using Goose Desktop on macOS, you may also need to remove the app itself.
+* `rm -rf ~/Library/Application Support/Goose`
 * Delete the "Goose" app from your Applications folder
 
 After this cleanup, if you are looking to try out a fresh install of Goose, you can now start from the usual
@@ -172,9 +175,10 @@ An example is the GitHub extension whose command is `npx -y @modelcontextprotoco
 
 ---
 
-### macOS Permission Issues (M3 Macs)
+### macOS Permission Issues
 
-If you encounter an issue where the Goose desktop app shows no window on launch, it may be due to file and folder permissions. This typically happens because Goose needs read and write access to the `~/.config` directory to create its log directory and file.
+If you encounter an issue where the Goose Desktop app shows no window on launch, it may be due to file and folder permissions. This typically happens because Goose needs read and write access to the `~/.config` directory to create its log directory and file. 
+Similarly, if tools fail to create files or directories during use, it could be caused by the same permission issue.
 
 #### How to Check and Fix Permissions:
 
@@ -204,8 +208,42 @@ If you encounter an issue where the Goose desktop app shows no window on launch,
     ```sh
     ls -ld ~/.config
     ```
+
+If you still experience issues after fixing permissions, try launching Goose with superuser (admin) privileges:
+```sh
+sudo /Applications/Goose.app/Contents/MacOS/Goose
+```
+
+:::note
+Running Goose with sudo may create files owned by root, which could lead to further permission issues. Use this as a troubleshooting step rather than a permanent fix.
+:::
+
+#### Update permission in System Settings (macOs)
+1. Go to `System Settings` -> `Privacy & Security` -> `Files & Folders`
+2. Grant Goose access
+
 ---
 
+### Connection Error with Ollama Provider on WSL
+
+If you encounter an error like this when setting up Ollama as the provider in Goose:
+    ```
+    Execution error: error sending request for url (http://localhost:11434/v1/chat/completions)
+    ```
+This likely means that the local host address is not accessible from WSL.
+1. Check if the service is running:
+    ```
+    curl http://localhost:11434/api/tags
+    ```
+    If you receive a `failed to connect` error, it’s possible that WSL is using a different IP for localhost. In that case, run the following command to find the correct IP address for WSL:
+    ```
+    ip route show | grep -i default | awk '{ print $3 }'
+    ```
+2. Once you get the IP address, use it in your Goose configuration instead of localhost. For example:
+    ```
+    http://172.24.80.1:11434
+    ```
+---
 ### Need Further Help? 
 If you have questions, run into issues, or just need to brainstorm ideas join the [Discord Community][discord]!
 

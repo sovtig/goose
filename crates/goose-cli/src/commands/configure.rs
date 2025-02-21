@@ -150,12 +150,18 @@ pub async fn handle_configure() -> Result<(), Box<dyn Error>> {
                 "Enable or disable connected extensions",
             )
             .item("remove", "Remove Extension", "Remove an extension")
+            .item(
+                "settings",
+                "Goose Settings",
+                "Set the Goose Mode, Tool Output, and more",
+            )
             .interact()?;
 
         match action {
             "toggle" => toggle_extensions_dialog(),
             "add" => configure_extensions_dialog(),
             "remove" => remove_extension_dialog(),
+            "settings" => configure_settings_dialog(),
             "providers" => configure_provider_dialog().await.and(Ok(())),
             _ => unreachable!(),
         }
@@ -422,6 +428,11 @@ pub fn configure_extensions_dialog() -> Result<(), Box<dyn Error>> {
                     "Memory",
                     "Tools to save and retrieve durable memories",
                 )
+                .item(
+                    "tutorial",
+                    "Tutorial",
+                    "Access interactive tutorials and guides",
+                )
                 .item("jetbrains", "JetBrains", "Connect to jetbrains IDEs")
                 .interact()?
                 .to_string();
@@ -606,6 +617,104 @@ pub fn remove_extension_dialog() -> Result<(), Box<dyn Error>> {
         ExtensionManager::remove(name)?;
         cliclack::outro(format!("Removed {} extension", style(name).green()))?;
     }
+
+    Ok(())
+}
+
+pub fn configure_settings_dialog() -> Result<(), Box<dyn Error>> {
+    let setting_type = cliclack::select("What setting would you like to configure?")
+        .item("goose_mode", "Goose Mode", "Configure Goose mode")
+        .item(
+            "tool_output",
+            "Tool Output",
+            "Show more or less tool output",
+        )
+        .interact()?;
+
+    match setting_type {
+        "goose_mode" => {
+            configure_goose_mode_dialog()?;
+        }
+        "tool_output" => {
+            configure_tool_output_dialog()?;
+        }
+        _ => unreachable!(),
+    };
+
+    Ok(())
+}
+
+pub fn configure_goose_mode_dialog() -> Result<(), Box<dyn Error>> {
+    let config = Config::global();
+
+    // Check if GOOSE_MODE is set as an environment variable
+    if std::env::var("GOOSE_MODE").is_ok() {
+        let _ = cliclack::log::info("Notice: GOOSE_MODE environment variable is set and will override the configuration here.");
+    }
+
+    let mode = cliclack::select("Which Goose mode would you like to configure?")
+        .item(
+            "auto",
+            "Auto Mode", 
+            "Full file modification, extension usage, edit, create and delete files freely"
+        )
+        .item(
+            "approve",
+            "Approve Mode",
+            "Editing, creating, deleting files and using extensions will require human approval"
+        )
+        .item(
+            "chat",
+            "Chat Mode",
+            "Engage with the selected provider without using tools, extensions, or file modification"
+        )
+        .interact()?;
+
+    match mode {
+        "auto" => {
+            config.set("GOOSE_MODE", Value::String("auto".to_string()))?;
+            cliclack::outro("Set to Auto Mode - full file modification enabled")?;
+        }
+        "approve" => {
+            config.set("GOOSE_MODE", Value::String("approve".to_string()))?;
+            cliclack::outro("Set to Approve Mode - modifications require approval")?;
+        }
+        "chat" => {
+            config.set("GOOSE_MODE", Value::String("chat".to_string()))?;
+            cliclack::outro("Set to Chat Mode - no tools or modifications enabled")?;
+        }
+        _ => unreachable!(),
+    };
+    Ok(())
+}
+
+pub fn configure_tool_output_dialog() -> Result<(), Box<dyn Error>> {
+    let config = Config::global();
+    // Check if GOOSE_CLI_MIN_PRIORITY is set as an environment variable
+    if std::env::var("GOOSE_CLI_MIN_PRIORITY").is_ok() {
+        let _ = cliclack::log::info("Notice: GOOSE_CLI_MIN_PRIORITY environment variable is set and will override the configuration here.");
+    }
+    let tool_log_level = cliclack::select("Which tool output would you like to show?")
+        .item("high", "High Importance", "")
+        .item("medium", "Medium Importance", "Ex. results of file-writes")
+        .item("all", "All (default)", "Ex. shell command output")
+        .interact()?;
+
+    match tool_log_level {
+        "high" => {
+            config.set("GOOSE_CLI_MIN_PRIORITY", Value::from(0.8))?;
+            cliclack::outro("Showing tool output of high importance only.")?;
+        }
+        "medium" => {
+            config.set("GOOSE_CLI_MIN_PRIORITY", Value::from(0.2))?;
+            cliclack::outro("Showing tool output of medium importance.")?;
+        }
+        "all" => {
+            config.set("GOOSE_CLI_MIN_PRIORITY", Value::from(0.0))?;
+            cliclack::outro("Showing all tool output.")?;
+        }
+        _ => unreachable!(),
+    };
 
     Ok(())
 }

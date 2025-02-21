@@ -38,4 +38,7 @@ pub trait Agent: Send + Sync {
 
     /// Handle a confirmation response for a tool request
     async fn handle_confirmation(&self, request_id: String, confirmed: bool);
+
+    /// Override the system prompt with custom text
+    async fn override_system_prompt(&mut self, template: String);
 }
