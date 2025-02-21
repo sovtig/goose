@@ -238,27 +238,6 @@ impl Agent for TruncateAgent {
                         // Clone goose_mode once before the match to avoid move issues
                         let mode = goose_mode.clone().unwrap_or_else(|| "auto".to_string());
                         match mode.as_str() {
-                            "auto" => {
-                                // Process tool requests in parallel
-                                let mut tool_futures = Vec::new();
-                                for request in &tool_requests {
-                                    if let Ok(tool_call) = request.tool_call.clone() {
-                                        tool_futures.push(async {
-                                            let output = capabilities.dispatch_tool_call(tool_call).await;
-                                            (request.id.clone(), output)
-                                        });
-                                    }
-                                }
-
-                                // Wait for all tool calls to complete
-                                let results = futures::future::join_all(tool_futures).await;
-                                for (request_id, output) in results {
-                                    message_tool_response = message_tool_response.with_tool_response(
-                                        request_id,
-                                        output,
-                                    );
-                                }
-                            },
                             "approve" => {
                                 // Process each tool request sequentially with confirmation
                                 for request in &tool_requests {
@@ -303,7 +282,27 @@ impl Agent for TruncateAgent {
                                 }
                             },
                             _ => {
-                                warn!("Unknown goose_mode: {mode:?}. Defaulting to 'approve' mode.");
+                                if mode != "auto" {
+                                    warn!("Unknown GOOSE_MODE: {mode:?}. Defaulting to 'auto' mode.");
+                                }
+                                // Process tool requests in parallel
+                                let mut tool_futures = Vec::new();
+                                for request in &tool_requests {
+                                    if let Ok(tool_call) = request.tool_call.clone() {
+                                        tool_futures.push(async {
+                                            let output = capabilities.dispatch_tool_call(tool_call).await;
+                                            (request.id.clone(), output)
+                                        });
+                                    }
+                                }
+                                // Wait for all tool calls to complete
+                                let results = futures::future::join_all(tool_futures).await;
+                                for (request_id, output) in results {
+                                    message_tool_response = message_tool_response.with_tool_response(
+                                        request_id,
+                                        output,
+                                    );
+                                }
                             }
                         }
 

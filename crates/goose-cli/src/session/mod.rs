@@ -238,6 +238,7 @@ impl Session {
 
                                 message = confirmation_request;
                             }
+
                             // Only push the message if it's not a tool confirmation request
                             if !message.content.iter().any(|content| matches!(content, MessageContent::ToolConfirmationRequest(_))) {
                                 self.messages.push(message.clone());

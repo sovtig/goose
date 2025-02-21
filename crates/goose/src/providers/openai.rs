@@ -115,7 +115,6 @@ impl Provider for OpenAiProvider {
 
         // Make request
         let response = self.post(payload.clone()).await?;
-        println!("response: {:?}", response);
 
         // Parse response
         let message = response_to_message(response.clone())?;
