@@ -681,21 +681,6 @@ mod tests {
             Err(Error::NotInitialized)
         }
 
-        async fn list_prompts(
-            &self,
-            _next_cursor: Option<String>,
-        ) -> Result<ListPromptsResult, Error> {
-            Err(Error::NotInitialized)
-        }
-
-        async fn get_prompt(
-            &self,
-            _name: &str,
-            _arguments: Value,
-        ) -> Result<GetPromptResult, Error> {
-            Err(Error::NotInitialized)
-        }
-
         async fn call_tool(&self, name: &str, _arguments: Value) -> Result<CallToolResult, Error> {
             match name {
                 "tool" | "test__tool" => Ok(CallToolResult {
@@ -705,6 +690,7 @@ mod tests {
                 _ => Err(Error::NotInitialized),
             }
         }
+
         async fn list_prompts(
             &self,
             _next_cursor: Option<String>,

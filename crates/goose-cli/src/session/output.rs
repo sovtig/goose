@@ -179,7 +179,7 @@ pub fn render_prompt_info(info: &PromptInfo) {
         println!(" {}: {}", style("Extension").green(), ext);
     }
 
-    println!("Prompt: {}", style(&info.name).cyan().bold());
+    println!(" Prompt: {}", style(&info.name).cyan().bold());
 
     if let Some(desc) = &info.description {
         println!("\n {}", desc);

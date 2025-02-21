@@ -60,39 +60,40 @@ pub fn get_input(
 }
 
 fn handle_slash_command(input: &str) -> Option<InputResult> {
-    let parts: Vec<&str> = input.trim().split_whitespace().collect();
-    match parts.get(0).map(|s| *s) {
-        Some("/exit") | Some("/quit") => Some(InputResult::Exit),
-        Some("/?") | Some("/help") => {
+    let input = input.trim();
+
+    match input {
+        "/exit" | "/quit" => Some(InputResult::Exit),
+        "/?" | "/help" => {
             print_help();
             Some(InputResult::Retry)
         }
-        Some("/t") => Some(InputResult::ToggleTheme),
-        Some("/prompts") => Some(InputResult::ListPrompts),
-        Some("/prompt") => parse_prompt_command(&parts[1..]),
-        Some(s) if s.starts_with("/extension ") => {
-            Some(InputResult::AddExtension(s[11..].to_string()))
-        }
-        Some(s) if s.starts_with("/builtin ") => Some(InputResult::AddBuiltin(s[9..].to_string())),
+        "/t" => Some(InputResult::ToggleTheme),
+        "/prompts" => Some(InputResult::ListPrompts),
+        s if s.starts_with("/prompt ") => parse_prompt_command(&s[8..]),
+        s if s.starts_with("/extension ") => Some(InputResult::AddExtension(s[11..].to_string())),
+        s if s.starts_with("/builtin ") => Some(InputResult::AddBuiltin(s[9..].to_string())),
         _ => None,
     }
 }
 
-fn parse_prompt_command(args: &[&str]) -> Option<InputResult> {
-    if args.is_empty() {
+fn parse_prompt_command(args: &str) -> Option<InputResult> {
+    let parts: Vec<&str> = args.split_whitespace().collect();
+
+    if parts.is_empty() {
         return None;
     }
 
     let mut options = PromptCommandOptions {
-        name: args[0].to_string(),
+        name: parts[0].to_string(),
         info: false,
         arguments: HashMap::new(),
     };
 
     // Parse remaining arguments
     let mut i = 1;
-    while i < args.len() {
-        match args[i] {
+    while i < parts.len() {
+        match parts[i] {
             "--info" => {
                 options.info = true;
             }
