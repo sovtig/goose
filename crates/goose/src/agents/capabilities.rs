@@ -556,7 +556,8 @@ mod tests {
     use mcp_client::client::Error;
     use mcp_client::client::McpClientTrait;
     use mcp_core::protocol::{
-        CallToolResult, InitializeResult, ListResourcesResult, ListToolsResult, ReadResourceResult,
+        CallToolResult, GetPromptResult, InitializeResult, ListPromptsResult, ListResourcesResult,
+        ListToolsResult, ReadResourceResult,
     };
     use serde_json::json;
 
@@ -624,6 +625,20 @@ mod tests {
                 }),
                 _ => Err(Error::NotInitialized),
             }
+        }
+        async fn list_prompts(
+            &self,
+            _next_cursor: Option<String>,
+        ) -> Result<ListPromptsResult, Error> {
+            Err(Error::NotInitialized)
+        }
+
+        async fn get_prompt(
+            &self,
+            _name: &str,
+            _arguments: Value,
+        ) -> Result<GetPromptResult, Error> {
+            Err(Error::NotInitialized)
         }
     }
 
