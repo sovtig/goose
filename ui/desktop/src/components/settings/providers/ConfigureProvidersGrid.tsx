@@ -46,6 +46,8 @@ export function ConfigureProvidersGrid() {
   const [providerToDelete, setProviderToDelete] = useState(null);
   const { currentModel } = useModel();
 
+  console.log('CONFIGURE PROVIDERS GRID: ', activeKeys);
+
   const providers = useMemo(() => {
     return supported_providers.map((providerName) => {
       const alias =
