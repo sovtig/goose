@@ -49,14 +49,14 @@ const fakeProviderState: ProviderState[] = [
   },
 ];
 
-export default function ProviderSettings() {
+export default function ProviderSettings({ onClose }: { onClose: () => void }) {
   return (
     <div className="h-screen w-full">
       <div className="relative flex items-center h-[36px] w-full bg-bgSubtle"></div>
 
       <ScrollArea className="h-full w-full">
         <div className="px-8 pt-6 pb-4">
-          <BackButton />
+          <BackButton onClick={onClose} />
           <h1 className="text-3xl font-medium text-textStandard mt-1">Configure</h1>
         </div>
 

@@ -20,7 +20,7 @@
     "format": "prettier --write \"src/**/*.{ts,tsx,css,json}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css,json}\"",
     "prepare": "cd ../.. && husky install",
-    "start-alpha-gui": "FEATURE_NEW_GRID=true npm run generate-api && electron-forge start"
+    "start-alpha-gui": "ALPHA=true npm run generate-api && electron-forge start"
   },
   "devDependencies": {
     "@electron-forge/cli": "^7.5.0",
