@@ -63,6 +63,12 @@ run-ui:
     @echo "Running UI..."
     cd ui/desktop && npm install && npm run start-gui
 
+# Run UI with alpha changes
+run-ui:
+    @just release-binary
+    @echo "Running UI..."
+    cd ui/desktop && npm install && FEATURE_NEW_GRID=true npm run start-alpha-gui
+
 # Run UI with latest (Windows version)
 run-ui-windows:
     @just release-windows
