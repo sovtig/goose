@@ -69,7 +69,6 @@ impl Agent for ReferenceAgent {
     async fn reply(
         &self,
         messages: &[Message],
-        _goose_mode: Option<String>,
     ) -> anyhow::Result<BoxStream<'_, anyhow::Result<Message>>> {
         let mut messages = messages.to_vec();
         let reply_span = tracing::Span::current();

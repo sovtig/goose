@@ -28,13 +28,8 @@ pub fn to_bedrock_message(message: &Message) -> Result<bedrock::Message> {
 pub fn to_bedrock_message_content(content: &MessageContent) -> Result<bedrock::ContentBlock> {
     Ok(match content {
         MessageContent::Text(text) => bedrock::ContentBlock::Text(text.text.to_string()),
-        MessageContent::ToolConfirmationRequest(tool_confirmation_request) => {
-            bedrock::ContentBlock::Text(format!(
-                "Do you want to run tool '{}' with id '{}' and input '{}'?",
-                tool_confirmation_request.tool_name,
-                tool_confirmation_request.id,
-                tool_confirmation_request.arguments
-            ))
+        MessageContent::ToolConfirmationRequest(_tool_confirmation_request) => {
+            bedrock::ContentBlock::Text("".to_string())
         }
         MessageContent::Image(_) => {
             bail!("Image content is not supported by Bedrock provider yet")

@@ -11,7 +11,6 @@ use anyhow::Result;
 use etcetera::choose_app_strategy;
 use goose::agents::extension::{Envs, ExtensionConfig};
 use goose::agents::Agent;
-use goose::config::Config;
 use goose::message::{Message, MessageContent};
 use mcp_core::handler::ToolError;
 use rand::{distributions::Alphanumeric, Rng};
@@ -122,18 +121,15 @@ impl Session {
                 }
             }
         }
-        let config = Config::global();
         output::display_greeting();
         loop {
-            let goose_mode = config.get("GOOSE_MODE").unwrap_or("auto".to_string());
             match input::get_input(&mut editor)? {
                 input::InputResult::Message(content) => {
                     self.messages.push(Message::user().with_text(&content));
                     storage::persist_messages(&self.session_file, &self.messages)?;
 
                     output::show_thinking();
-                    self.process_agent_response(&mut editor, Some(goose_mode.clone()))
-                        .await?;
+                    self.process_agent_response(&mut editor).await?;
                     output::hide_thinking();
                 }
                 input::InputResult::Exit => break,
@@ -189,25 +185,19 @@ impl Session {
     }
 
     pub async fn headless_start(&mut self, initial_message: String) -> Result<()> {
-        // Load settings from config
-        let config = Config::global();
-        let goose_mode = config.get("GOOSE_MODE").unwrap_or("auto".to_string());
-
         self.messages
             .push(Message::user().with_text(&initial_message));
         storage::persist_messages(&self.session_file, &self.messages)?;
         let mut editor = Editor::<(), rustyline::history::DefaultHistory>::new()?;
-        self.process_agent_response(&mut editor, Some(goose_mode.clone()))
-            .await?;
+        self.process_agent_response(&mut editor).await?;
         Ok(())
     }
 
     async fn process_agent_response(
         &mut self,
         editor: &mut Editor<(), rustyline::history::DefaultHistory>,
-        goose_mode: Option<String>,
     ) -> Result<()> {
-        let mut stream = self.agent.reply(&self.messages, goose_mode).await?;
+        let mut stream = self.agent.reply(&self.messages).await?;
 
         use futures::StreamExt;
         loop {
@@ -222,11 +212,16 @@ impl Session {
 
                                 // Format the confirmation prompt
                                 let prompt = format!(
-                                    "Goose would like to call the tool: {}\nWith arguments: {}\nAllow? (y/n): ",
-                                    confirmation.tool_name,
-                                    serde_json::to_string_pretty(&confirmation.arguments).unwrap_or_default()
+                                    "Goose would like to call the above tool. Allow? (y/n): ",
                                 );
-                                output::render_message(&Message::assistant().with_text(&prompt));
+
+                                let confirmation_request = Message::user().with_tool_confirmation_request(
+                                    confirmation.id.clone(),
+                                    confirmation.tool_name.clone(),
+                                    confirmation.arguments.clone(),
+                                    Some(prompt.clone())
+                                );
+                                output::render_message(&confirmation_request);
 
                                 // Get confirmation from user
                                 let confirmed = match input::get_input(editor)? {
@@ -235,11 +230,6 @@ impl Session {
                                     }
                                     _ => false,
                                 };
-                                let confirmation_request = Message::user().with_tool_confirmation_request(
-                                    confirmation.id.clone(),
-                                    confirmation.tool_name.clone(),
-                                    confirmation.arguments.clone(),
-                                );
 
                                 self.agent.handle_confirmation(confirmation.id.clone(), confirmed).await;
 

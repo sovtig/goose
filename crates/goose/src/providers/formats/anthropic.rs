@@ -57,14 +57,8 @@ pub fn format_messages(messages: &[Message]) -> Vec<Value> {
                         }));
                     }
                 }
-                MessageContent::ToolConfirmationRequest(tool_confirmation_request) => {
-                    content.push(json!({
-                        "type": "text",
-                        "text": format!("Do you want to run tool '{}' with id '{}' and input '{}'?",
-                            tool_confirmation_request.tool_name,
-                            tool_confirmation_request.id,
-                            tool_confirmation_request.arguments),
-                    }));
+                MessageContent::ToolConfirmationRequest(_tool_confirmation_request) => {
+                    // Skip tool confirmation requests
                 }
                 MessageContent::Image(_) => continue, // Anthropic doesn't support image content yet
             }

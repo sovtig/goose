@@ -9,6 +9,7 @@ use tracing::{debug, error, instrument, warn};
 use super::Agent;
 use crate::agents::capabilities::Capabilities;
 use crate::agents::extension::{ExtensionConfig, ExtensionResult};
+use crate::config::Config;
 use crate::message::{Message, ToolRequest};
 use crate::providers::base::Provider;
 use crate::providers::base::ProviderUsage;
@@ -140,13 +141,16 @@ impl Agent for TruncateAgent {
     async fn reply(
         &self,
         messages: &[Message],
-        goose_mode: Option<String>,
     ) -> anyhow::Result<BoxStream<'_, anyhow::Result<Message>>> {
         let mut messages = messages.to_vec();
         let reply_span = tracing::Span::current();
         let mut capabilities = self.capabilities.lock().await;
         let mut tools = capabilities.get_prefixed_tools().await?;
         let mut truncation_attempt: usize = 0;
+
+        // Load settings from config
+        let config = Config::global();
+        let goose_mode = config.get("GOOSE_MODE").unwrap_or("auto".to_string());
 
         // we add in the 2 resource tools if any extensions support resources
         // TODO: make sure there is no collision with another extension's tool name
@@ -233,10 +237,10 @@ impl Agent for TruncateAgent {
                             break;
                         }
 
-                        // Process each tool request sequentially, asking for confirmation
+                        // Process tool requests depending on goose_mode
                         let mut message_tool_response = Message::user();
                         // Clone goose_mode once before the match to avoid move issues
-                        let mode = goose_mode.clone().unwrap_or_else(|| "auto".to_string());
+                        let mode = goose_mode.clone();
                         match mode.as_str() {
                             "approve" => {
                                 // Process each tool request sequentially with confirmation
@@ -246,6 +250,7 @@ impl Agent for TruncateAgent {
                                             request.id.clone(),
                                             tool_call.name.clone(),
                                             tool_call.arguments.clone(),
+                                            Some("Goose would like to call the tool: {}\nAllow? (y/n): ".to_string()),
                                         );
                                         yield confirmation;
 
@@ -277,7 +282,15 @@ impl Agent for TruncateAgent {
                                 for request in &tool_requests {
                                     message_tool_response = message_tool_response.with_tool_response(
                                         request.id.clone(),
-                                        Ok(vec![Content::text("Tool call skipped in Goose chat mode")]),
+                                        Ok(vec![Content::text(
+                                            "The following tool call was skipped in Goose chat mode. \
+                                            In chat mode, you cannot run tool calls, instead, you can \
+                                            only provide a detailed plan to the user. Provide an \
+                                            explanation of the proposed tool call as if it were a plan. \
+                                            Only if the user asks, provide a short explanation to the \
+                                            user that they could consider running the tool above on \
+                                            their own or with a different goose mode."
+                                        )]),
                                     );
                                 }
                             },

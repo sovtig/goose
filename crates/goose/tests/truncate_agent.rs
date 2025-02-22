@@ -120,7 +120,7 @@ async fn run_truncate_test(
         ),
     ];
 
-    let reply_stream = agent.reply(&messages, Some("auto".to_string())).await?;
+    let reply_stream = agent.reply(&messages).await?;
     tokio::pin!(reply_stream);
 
     let mut responses = Vec::new();

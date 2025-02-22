@@ -31,6 +31,7 @@ pub struct ToolConfirmationRequest {
     pub id: String,
     pub tool_name: String,
     pub arguments: Value,
+    pub prompt: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -77,11 +78,13 @@ impl MessageContent {
         id: S,
         tool_name: String,
         arguments: Value,
+        prompt: Option<String>,
     ) -> Self {
         MessageContent::ToolConfirmationRequest(ToolConfirmationRequest {
             id: id.into(),
             tool_name,
             arguments,
+            prompt,
         })
     }
     pub fn as_tool_request(&self) -> Option<&ToolRequest> {
@@ -212,9 +215,10 @@ impl Message {
         id: S,
         tool_name: String,
         arguments: Value,
+        prompt: Option<String>,
     ) -> Self {
         self.with_content(MessageContent::tool_confirmation_request(
-            id, tool_name, arguments,
+            id, tool_name, arguments, prompt,
         ))
     }
 

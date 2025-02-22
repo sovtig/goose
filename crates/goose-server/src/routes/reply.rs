@@ -248,14 +248,13 @@ async fn stream_message(
                         }
                     }
                     MessageContent::ToolConfirmationRequest(_) => {
-                        // TODO
+                        // skip tool confirmation requests
                     }
                     MessageContent::Image(_) => {
-                        // TODO
+                        // skip images
                     }
                     MessageContent::ToolResponse(_) => {
-                        // Tool responses should only come from the user
-                        continue;
+                        // skip tool responses
                     }
                 }
             }
@@ -310,7 +309,7 @@ async fn handler(
             }
         };
 
-        let mut stream = match agent.reply(&messages, Some("auto".to_string())).await {
+        let mut stream = match agent.reply(&messages).await {
             Ok(stream) => stream,
             Err(e) => {
                 tracing::error!("Failed to start reply stream: {:?}", e);
@@ -397,7 +396,7 @@ async fn ask_handler(
 
     // Get response from agent
     let mut response_text = String::new();
-    let mut stream = match agent.reply(&messages, Some("auto".to_string())).await {
+    let mut stream = match agent.reply(&messages).await {
         Ok(stream) => stream,
         Err(e) => {
             tracing::error!("Failed to start reply stream: {:?}", e);
