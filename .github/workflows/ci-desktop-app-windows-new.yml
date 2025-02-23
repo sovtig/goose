@@ -1,5 +1,3 @@
-Here is the full updated script with the added workaround for spurious network errors in `curl 8.0`:
-
 ```yaml
 name: "Bundle Desktop (Windows)"
 
