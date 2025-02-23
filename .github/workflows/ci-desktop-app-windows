@@ -1,0 +1,126 @@
+name: Desktop App Build (Windows)
+
+on:
+  pull_request:
+    branches:
+      - v1.0
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Rust
+      uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        toolchain: stable
+
+    - name: Cache Cargo registry
+      uses: actions/cache@v3
+      with:
+        path: C:\Users\runneradmin\.cargo\registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-registry-
+
+    - name: Cache Cargo index
+      uses: actions/cache@v3
+      with:
+        path: C:\Users\runneradmin\.cargo\index
+        key: ${{ runner.os }}-cargo-index
+        restore-keys: |
+          ${{ runner.os }}-cargo-index
+
+    - name: Cache Cargo build
+      uses: actions/cache@v3
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-build-
+
+    # Build Rust Binary
+    - name: Build Release Binary
+      run: cargo build --release
+
+    - name: Copy binary
+      run: Copy-Item -Path target\release\goosed.exe -Destination ui\desktop\src\bin\goosed.exe
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v2
+      with:
+        node-version: 'lts/*'
+
+    - name: Install dependencies
+      run: npm ci
+      working-directory: ui/desktop
+
+    - name: Make default Goose App
+      run: |
+        $attempt = 0
+        $max_attempts = 2
+        while ($attempt -lt $max_attempts) {
+          if (npm run bundle:default) {
+            break
+          }
+          $attempt++
+          Write-Output "Attempt $attempt failed. Retrying..."
+          Start-Sleep -Seconds 5
+        }
+        if ($attempt -ge $max_attempts) {
+          Write-Output "Action failed after $max_attempts attempts."
+          exit 1
+        }
+      working-directory: ui/desktop
+      shell: pwsh
+
+    - name: Check app launches
+      run: |
+        Write-Output "Opening Goose.exe..."
+        Start-Process -FilePath "ui\desktop\out\Goose-win32-x64\Goose.exe" -PassThru
+        
+        # Give the app a few seconds to start and write logs
+        Start-Sleep -Seconds 5
+        
+        # Check if it's running
+        if (Get-Process -Name "Goose" -ErrorAction SilentlyContinue) {
+          Write-Output "App appears to be running."
+        } else {
+          Write-Output "App did not stay open. Possible crash or startup error."
+          exit 1
+        }
+
+        $LOGFILE = "$env:APPDATA\Goose\logs\main.log"
+
+        # Print the log and verify "Starting goosed"
+        if (Test-Path $LOGFILE) {
+          Write-Output "===== Log file contents ====="
+          Get-Content $LOGFILE
+          Write-Output "============================="
+
+          # Check for evidence it ran in the logs:
+          if (Select-String -Path $LOGFILE -Pattern "ChatWindow loaded") {
+            Write-Output "Confirmed: 'Starting goosed' found in logs!"
+          } else {
+            Write-Output "Did not find 'Starting goosed' in logs. Failing..."
+            exit 1
+          }
+        } else {
+          Write-Output "No log file found at $LOGFILE. Exiting with failure."
+          exit 1
+        }
+
+        # Kill the app to clean up
+        Stop-Process -Name "Goose" -Force
+      shell: pwsh
