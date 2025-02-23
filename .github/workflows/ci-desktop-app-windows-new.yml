@@ -1,3 +1,6 @@
+Here is the full updated script with the added workaround for spurious network errors in `curl 8.0`:
+
+```yaml
 name: "Bundle Desktop (Windows)"
 
 on:
@@ -35,6 +38,13 @@ jobs:
         # or uses: actions/setup-rust@v1
         # with:
         #   rust-version: 1.73.0
+
+      # Add the workaround step here
+      - name: Work around spurious network errors in curl 8.0
+        run: |
+          if rustc +stable --version --verbose | grep -q '^release: 1\.7[01]\.'; then
+            echo CARGO_HTTP_MULTIPLEXING=false >> $GITHUB_ENV
+          fi
 
       # 3) Set up Node.js
       - name: Set up Node.js
@@ -155,3 +165,4 @@ jobs:
         with:
           name: desktop-windows-dist
           path: ui/desktop/out/Goose-win32-x64/
+```
